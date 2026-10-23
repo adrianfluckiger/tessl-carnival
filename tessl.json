@@ -1,0 +1,12 @@
+{
+  "name": "adrian-engineering/tessl-carnival",
+  "mode": "managed",
+  "dependencies": {
+    "tessl-labs/factory-setup": {
+      "version": "0.17.0"
+    }
+  },
+  "agents": [
+    "claude-code"
+  ]
+}
