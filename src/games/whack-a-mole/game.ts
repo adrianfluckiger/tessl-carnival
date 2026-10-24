@@ -87,8 +87,12 @@ export function popMole(
   return hole;
 }
 
-/** Whether (x, y) is on the mole as it is drawn: its round head, or its body down to the hole. */
+/**
+ * Whether (x, y) is on the mole as it is drawn: its round head, or its body down to the hole.
+ * Nothing below the hole line counts, because the hole's front lip covers it.
+ */
 function onMole(hole: Hole, x: number, y: number): boolean {
+  if (y > hole.y) return false;
   const headY = hole.y - HOLE_RADIUS * 0.6;
   if (Math.hypot(x - hole.x, y - headY) <= MOLE_RADIUS) return true;
   return Math.abs(x - hole.x) <= MOLE_RADIUS && y >= headY && y <= hole.y;

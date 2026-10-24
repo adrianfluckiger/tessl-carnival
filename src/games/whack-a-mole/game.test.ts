@@ -85,6 +85,8 @@ describe('whack-a-mole', () => {
     const hole = popMole(state, () => 0)!;
     // Below the hole's front lip: close to the head, but not on the mole.
     expect(whack(state, hole.x, hole.y + 20)).toBe(false);
+    // On the lip just below the hole line, still inside the head's circle.
+    expect(whack(state, hole.x, hole.y + 3)).toBe(false);
     // Beside the mole's body.
     expect(whack(state, hole.x + HOLE_RADIUS * 0.8, hole.y - 5)).toBe(false);
     expect(state.score).toBe(0);
