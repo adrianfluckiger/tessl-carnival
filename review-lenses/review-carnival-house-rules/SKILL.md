@@ -19,7 +19,7 @@ Read house rules 1 to 3 in `AGENTS.md`, then `src/carnival/index.ts` for what th
 
 For each game folder the change touches, start at its `game.ts`. Follow where a round ends and check that exactly one `recordScore` call happens there, with the game's own id. Follow each value handed to the canvas, such as `fillStyle`, `strokeStyle`, `font` or a size, back to where it comes from.
 
-`src/games/index.ts` loads every `game.ts` and throws when one has no default export or exports an `id` that differs from its folder, and `src/games/index.test.ts` fails the same way. The midway then fails to load for every player, not only for that game. A game folder without a `game.ts` is never loaded, so it gets no booth and nothing fails.
+`src/games/index.ts` loads every `game.ts` and throws when one has no default export or exports an `id` that differs from its folder, and `src/games/index.test.ts` fails the same way. The midway then fails to load for every player, not only for that game. A game folder without a `game.ts` gets no booth, and `src/games/index.test.ts` fails on it.
 
 ## Threshold
 
