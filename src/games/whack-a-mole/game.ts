@@ -8,8 +8,8 @@ export const POINTS_PER_WHACK = 10;
 export const COLUMNS = 3;
 export const ROWS = 3;
 export const HOLE_RADIUS = 46;
-/** How close to a hole's centre, in pixels, a click has to land to whack its mole. */
-export const HIT_RADIUS = 50;
+/** The radius of a mole's head, and half the width of its body. */
+const MOLE_RADIUS = HOLE_RADIUS * 0.7;
 // At the start of the round a mole pops up every second and stays up for 1.2 s.
 // By the end it is every 0.4 s and 0.6 s.
 const POP_EVERY = { start: 1, end: 0.4 };
@@ -87,12 +87,17 @@ export function popMole(
   return hole;
 }
 
+/** Whether (x, y) is on the mole as it is drawn: its round head, or its body down to the hole. */
+function onMole(hole: Hole, x: number, y: number): boolean {
+  const headY = hole.y - HOLE_RADIUS * 0.6;
+  if (Math.hypot(x - hole.x, y - headY) <= MOLE_RADIUS) return true;
+  return Math.abs(x - hole.x) <= MOLE_RADIUS && y >= headY && y <= hole.y;
+}
+
 /** Whacks at (x, y). Returns true and scores if a mole was up there. */
 export function whack(state: WhackAMoleState, x: number, y: number): boolean {
   if (state.phase !== 'playing') return false;
-  const hole = state.holes.find(
-    (h) => h.upFor > 0 && Math.hypot(x - h.x, y - (h.y - HOLE_RADIUS * 0.6)) <= HIT_RADIUS,
-  );
+  const hole = state.holes.find((h) => h.upFor > 0 && onMole(h, x, y));
   if (!hole) return false;
   hole.upFor = 0;
   state.score += POINTS_PER_WHACK;
@@ -146,9 +151,9 @@ function draw(ctx: CanvasRenderingContext2D, state: WhackAMoleState) {
       const headY = hole.y - HOLE_RADIUS * 0.6;
       ctx.fillStyle = colors.muted;
       ctx.beginPath();
-      ctx.arc(hole.x, headY, HOLE_RADIUS * 0.7, Math.PI, 0);
-      ctx.lineTo(hole.x + HOLE_RADIUS * 0.7, hole.y);
-      ctx.lineTo(hole.x - HOLE_RADIUS * 0.7, hole.y);
+      ctx.arc(hole.x, headY, MOLE_RADIUS, Math.PI, 0);
+      ctx.lineTo(hole.x + MOLE_RADIUS, hole.y);
+      ctx.lineTo(hole.x - MOLE_RADIUS, hole.y);
       ctx.fill();
       ctx.fillStyle = colors.background;
       for (const side of [-1, 1]) {

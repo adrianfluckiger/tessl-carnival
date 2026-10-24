@@ -80,6 +80,19 @@ describe('whack-a-mole', () => {
     expect(state.score).toBe(0);
   });
 
+  it('only scores for a click on the mole itself, not the board below it', () => {
+    const state = createState();
+    const hole = popMole(state, () => 0)!;
+    // Below the hole's front lip: close to the head, but not on the mole.
+    expect(whack(state, hole.x, hole.y + 20)).toBe(false);
+    // Beside the mole's body.
+    expect(whack(state, hole.x + HOLE_RADIUS * 0.8, hole.y - 5)).toBe(false);
+    expect(state.score).toBe(0);
+    // The mole's body, just above the hole.
+    expect(whack(state, hole.x, hole.y - 5)).toBe(true);
+    expect(state.score).toBe(POINTS_PER_WHACK);
+  });
+
   it('pops moles faster and for less time as the round goes on', () => {
     const state = createState();
     const early = { every: popInterval(state), up: upTime(state) };
