@@ -25,14 +25,12 @@ For each game folder the change touches, start at its `game.ts`. Follow where a 
 
 Report a game that skips the shared scores module, records a score more than once per round or under another game's id, touches local storage, keeps its own high score table, or writes a colour, font or size the theme should supply.
 
-Report a game folder with no `game.ts`, because it gets no booth.
-
 Do not report:
 
 - Code outside `src/games/`. `src/carnival/` defines the theme and scores, and `src/midway/palette.ts` has its own scenery colours.
 - Values derived from the theme, such as a size scaled from a theme size or a colour picked from `theme`.
 - Test data in `game.test.ts`.
-- Anything lint, the type-checker or the tests already enforce, such as a missing default export or an `id` that differs from its folder, which `src/games/index.test.ts` fails on.
+- Anything lint, the type-checker or the tests already enforce, such as a missing `game.ts`, a missing default export or an `id` that differs from its folder, which `src/games/index.test.ts` fails on.
 - Other house rules, such as tests, cleanup in `start` or the README. They belong to the other lenses or to review by a person.
 
 ## Reporting
