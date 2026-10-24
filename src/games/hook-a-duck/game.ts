@@ -93,15 +93,25 @@ export function hookDepth(cast: Cast): number {
   return Math.min(cast.age / DROP_TIME, 1);
 }
 
-/** Advances the game by `dt` seconds. */
-export function step(state: HookADuckState, dt: number): void {
+function drift(state: HookADuckState, dt: number): void {
   for (const duck of state.ducks) {
     duck.angle = (duck.angle + DRIFT_SPEED * dt) % (Math.PI * 2);
   }
+}
+
+/** Advances the game by `dt` seconds. */
+export function step(state: HookADuckState, dt: number): void {
+  let rest = dt;
 
   if (state.cast) {
-    state.cast.age += dt;
-    if (state.cast.age >= DROP_TIME) {
+    const toWater = DROP_TIME - state.cast.age;
+    if (rest < toWater) {
+      state.cast.age += rest;
+    } else {
+      // Land the hook against where the ducks are at the moment it reaches the
+      // water, not where they are at the end of the frame.
+      drift(state, toWater);
+      rest -= toWater;
       const { x, y } = state.cast;
       const duck = duckAt(state, x, y);
       if (duck) {
@@ -112,6 +122,8 @@ export function step(state: HookADuckState, dt: number): void {
       state.cast = null;
     }
   }
+
+  drift(state, rest);
 
   for (const c of state.catches) c.age += dt;
   state.catches = state.catches.filter((c) => c.age < 1);

@@ -92,6 +92,19 @@ describe('hook a duck', () => {
     expect(duck.caught).toBe(false);
   });
 
+  it('lands the hook against where the ducks are when it reaches the water, even mid-frame', () => {
+    const state = createState();
+    const duck = state.ducks[3];
+    const start = duck.angle;
+    const target = whereAfterDrop(duck);
+    lowerHook(state, target.x, target.y);
+    step(state, DROP_TIME / 2);
+    // This frame runs a whole second past the moment the hook reaches the water.
+    step(state, DROP_TIME / 2 + 1);
+    expect(duck.caught).toBe(true);
+    expect(duck.angle).toBeCloseTo(start + DRIFT_SPEED * (DROP_TIME + 1));
+  });
+
   it('scores nothing for a hook that lands in empty water', () => {
     const state = createState();
     castAt(state, 400, 270);
