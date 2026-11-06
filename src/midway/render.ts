@@ -1163,6 +1163,47 @@ function jugglers(ctx: Ctx, prop: Prop, t: number) {
   sorted.slice(3).forEach(clown);
 }
 
+/** Three clowns in black and white face paint, nodding along to their own beat. */
+function posse(ctx: Ctx, prop: Prop, t: number) {
+  const look: Look = {
+    skin: palette.white,
+    hair: palette.ink,
+    shirt: palette.ink,
+    pants: palette.pants[0],
+  };
+  [0.2, 0.5, 0.8].forEach((s, i) => {
+    const p = at(prop.x + 0.5 + s * (prop.w - 1), prop.y + 0.5 + (i === 1 ? 0.1 : -0.1));
+    const x = p[0];
+    const y = p[1] - Math.max(0, Math.sin(t * 5 + i * 2)) * 0.8;
+    const dir = i - 1;
+    person(ctx, x, y, look, { dir });
+    // The face paint: black points through the eyes and a wide black grin.
+    for (const side of [-1, 1]) {
+      const ex = x + side * 1.5 + dir;
+      poly(
+        ctx,
+        [
+          [ex - 0.9, y - 20.3],
+          [ex, y - 23.2],
+          [ex + 0.9, y - 20.3],
+          [ex, y - 18.6],
+        ],
+        palette.ink,
+      );
+    }
+    stroke(
+      ctx,
+      [
+        [x - 2 + dir, y - 18.4],
+        [x + dir, y - 17.6],
+        [x + 2 + dir, y - 18.4],
+      ],
+      palette.ink,
+      0.9,
+    );
+  });
+}
+
 /** How high a billboard's sign stands, to the bottom of its board. */
 const BILLBOARD_HEIGHT = 40;
 
@@ -1630,6 +1671,7 @@ const PROP_HEIGHTS: Record<Prop['kind'], number> = {
   planter: 22,
   balloons: 52,
   jugglers: 60,
+  posse: 34,
   'bunting-pole': 0,
   billboard: BILLBOARD_HEIGHT + 40,
 };
@@ -1832,6 +1874,8 @@ export function drawProp(ctx: Ctx, prop: Prop, t: number) {
       return balloons(ctx, prop, t);
     case 'jugglers':
       return jugglers(ctx, prop, t);
+    case 'posse':
+      return posse(ctx, prop, t);
     case 'bunting-pole':
       return buntingPole(ctx, prop);
     case 'billboard':

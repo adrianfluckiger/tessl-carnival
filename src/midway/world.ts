@@ -48,6 +48,7 @@ export type PropKind =
   | 'planter'
   | 'balloons'
   | 'jugglers'
+  | 'posse'
   | 'bunting-pole'
   | 'billboard';
 
@@ -214,6 +215,8 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
   add('carousel', 17, entrance, 4, 4);
   add('balloons', 22, entrance + 4);
   add('planter', 15, entrance);
+  // Three face-painted clowns hanging out at the crossroads in front of the gate.
+  add('posse', AVENUE_X + 2, entrance, 2, 1);
   add('planter', 1, height - 2);
 
   return {
