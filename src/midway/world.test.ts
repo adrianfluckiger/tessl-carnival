@@ -66,6 +66,27 @@ describe('layoutMidway', () => {
     }
   });
 
+  it('puts the clown posse on the grass by the crossroads in front of the gate', () => {
+    const map = layoutMidway(['water-cannon']);
+    const posse = map.props.filter((p) => p.kind === 'posse');
+    expect(posse).toHaveLength(1);
+    const spot = posse[0];
+    expect(map.ground[spot.y * map.width + spot.x]).toBe('grass');
+    // Right beside where the avenue meets the cross path, south of it.
+    expect(spot.x).toBe(map.avenueX + 2);
+    expect(map.ground[(spot.y - 1) * map.width + spot.x]).toBe('path');
+    expect(map.ground[spot.y * map.width + map.avenueX + 1]).toBe('path');
+    for (const other of [...map.props, ...map.booths]) {
+      if (other === spot) continue;
+      const overlaps =
+        other.x < spot.x + spot.w &&
+        spot.x < other.x + other.w &&
+        other.y < spot.y + spot.h &&
+        spot.y < other.y + other.h;
+      expect(overlaps).toBe(false);
+    }
+  });
+
   it('lets the player reach every booth from the gate', () => {
     const ids = Array.from({ length: 7 }, (_, i) => `game-${i}`);
     const map = layoutMidway(ids);
