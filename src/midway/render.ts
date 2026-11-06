@@ -1104,6 +1104,65 @@ function balloons(ctx: Ctx, prop: Prop, t: number) {
   }
 }
 
+/** Seconds a ball takes to fly from one clown to the next. */
+const JUGGLE_THROW = 0.7;
+
+/** Four clowns in a ring, each throwing a ball to the clown on their left. */
+function jugglers(ctx: Ctx, prop: Prop, t: number) {
+  const cx = prop.x + prop.w / 2;
+  const cy = prop.y + prop.h / 2;
+  const centre = at(cx, cy);
+  oval(ctx, centre[0], centre[1], ISO_RX * 0.9, ISO_RY * 0.9, palette.shadow);
+  const clowns = [0, 1, 2, 3].map((i) => {
+    const angle = (i * Math.PI) / 2 + Math.PI / 4;
+    const p = at(cx + Math.cos(angle) * 0.55, cy + Math.sin(angle) * 0.55);
+    return { i, x: p[0], y: p[1] };
+  });
+  const hand = (i: number): Pt => {
+    const c = clowns[i % clowns.length];
+    return [lerp(c.x, centre[0], 0.25), lerp(c.y, centre[1], 0.25) - 14];
+  };
+  const balls = () => {
+    const step = t / JUGGLE_THROW;
+    const s = step - Math.floor(step);
+    clowns.forEach((_, k) => {
+      const from = hand(Math.floor(step) + k);
+      const to = hand(Math.floor(step) + k + 1);
+      const x = lerp(from[0], to[0], s);
+      const y = lerp(from[1], to[1], s) - 26 * 4 * s * (1 - s);
+      oval(ctx, x, y, 2, 2, palette.balloons[k % palette.balloons.length]);
+      oval(ctx, x - 0.6, y - 0.6, 0.7, 0.7, palette.white);
+    });
+  };
+  const clown = ({ i, x, y }: (typeof clowns)[number]) => {
+    const back = y > centre[1] + 1;
+    const dir = x > centre[0] ? -1 : 1;
+    const look: Look = {
+      skin: palette.cream,
+      hair: [palette.red, palette.gold, palette.blue, palette.pink][i],
+      shirt: palette.balloons[(i + 2) % palette.balloons.length],
+      pants: [palette.blue, palette.red, palette.gold, palette.pinkShade][i],
+    };
+    person(ctx, x, y, look, { swing: Math.sin(t * 9 + i * 1.6) * 0.8, back, dir });
+    if (!back) oval(ctx, x + dir * 0.5, y - 19.3, 1.3, 1.3, palette.red);
+    poly(
+      ctx,
+      [
+        [x - 3.6, y - 23.5],
+        [x + 3.6, y - 23.5],
+        [x, y - 31],
+      ],
+      look.shirt,
+    );
+    oval(ctx, x, y - 31, 1.4, 1.4, palette.white);
+  };
+  // Back clowns first, then the balls over the middle, then the front clowns.
+  const sorted = [...clowns].sort((a, b) => a.y - b.y);
+  sorted.slice(0, 3).forEach(clown);
+  balls();
+  sorted.slice(3).forEach(clown);
+}
+
 /** How high a billboard's sign stands, to the bottom of its board. */
 const BILLBOARD_HEIGHT = 40;
 
@@ -1570,6 +1629,7 @@ const PROP_HEIGHTS: Record<Prop['kind'], number> = {
   bench: 16,
   planter: 22,
   balloons: 52,
+  jugglers: 60,
   'bunting-pole': 0,
   billboard: BILLBOARD_HEIGHT + 40,
 };
@@ -1770,6 +1830,8 @@ export function drawProp(ctx: Ctx, prop: Prop, t: number) {
       return planter(ctx, prop);
     case 'balloons':
       return balloons(ctx, prop, t);
+    case 'jugglers':
+      return jugglers(ctx, prop, t);
     case 'bunting-pole':
       return buntingPole(ctx, prop);
     case 'billboard':

@@ -48,6 +48,24 @@ describe('layoutMidway', () => {
     expect(isBlocked(map, -1, 0)).toBe(true);
   });
 
+  it('puts the four juggling clowns in front of the tent, out of the way', () => {
+    const map = layoutMidway(['water-cannon']);
+    const jugglers = map.props.filter((p) => p.kind === 'jugglers');
+    expect(jugglers).toHaveLength(1);
+    const ring = jugglers[0];
+    expect(isBlocked(map, ring.x, ring.y)).toBe(true);
+    expect(map.ground[ring.y * map.width + ring.x]).toBe('grass');
+    for (const other of [...map.props, ...map.booths]) {
+      if (other === ring) continue;
+      const overlaps =
+        other.x < ring.x + ring.w &&
+        ring.x < other.x + other.w &&
+        other.y < ring.y + ring.h &&
+        ring.y < other.y + other.h;
+      expect(overlaps).toBe(false);
+    }
+  });
+
   it('lets the player reach every booth from the gate', () => {
     const ids = Array.from({ length: 7 }, (_, i) => `game-${i}`);
     const map = layoutMidway(ids);
