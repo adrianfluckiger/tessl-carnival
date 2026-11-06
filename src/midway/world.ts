@@ -47,6 +47,7 @@ export type PropKind =
   | 'bench'
   | 'planter'
   | 'balloons'
+  | 'jugglers'
   | 'bunting-pole'
   | 'billboard';
 
@@ -193,6 +194,8 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
   add('cart', 17, side + 4, 1, 1, 1);
   add('cart', 21, side + 4, 1, 1, 2);
   add('bench', 19, side + 5);
+  // Four clowns juggling in a ring in front of the tent.
+  add('jugglers', 19, side + 3, 2, 2);
   // Each extra row of booths gets a little more scenery beside it.
   for (let band = 2; band < rows; band++) {
     const y = side + band * ROW_SPACING;
