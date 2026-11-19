@@ -6,11 +6,16 @@ import {
   createWalker,
   findPath,
   followPath,
+  HALFPIPE,
+  halfpipeHeight,
   inputDirection,
   isBlocked,
   layoutMidway,
   pathToBooth,
   seededRandom,
+  SKATE_AIR,
+  SKATE_RIDE,
+  skaterAt,
   toScreen,
   toTile,
   updateVisitor,
@@ -83,6 +88,27 @@ describe('layoutMidway', () => {
         spot.x < other.x + other.w &&
         other.y < spot.y + spot.h &&
         spot.y < other.y + other.h;
+      expect(overlaps).toBe(false);
+    }
+  });
+
+  it('puts the halfpipe in the back right corner, out of the way', () => {
+    const map = layoutMidway(['water-cannon']);
+    const pipes = map.props.filter((p) => p.kind === 'halfpipe');
+    expect(pipes).toHaveLength(1);
+    const pipe = pipes[0];
+    // Against the back hedge and the right hedge.
+    expect(pipe.y).toBe(1);
+    expect(pipe.x + pipe.w).toBe(map.width - 1);
+    expect(pipe.w).toBe(HALFPIPE.length);
+    expect(isBlocked(map, pipe.x, pipe.y)).toBe(true);
+    for (const other of [...map.props, ...map.booths]) {
+      if (other === pipe) continue;
+      const overlaps =
+        other.x < pipe.x + pipe.w &&
+        pipe.x < other.x + other.w &&
+        other.y < pipe.y + pipe.h &&
+        pipe.y < other.y + other.h;
       expect(overlaps).toBe(false);
     }
   });
@@ -217,6 +243,61 @@ describe('visitors', () => {
     for (const visitor of visitors) {
       expect(isBlocked(map, Math.floor(visitor.x), Math.floor(visitor.y))).toBe(false);
       expect(visitor.stride).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('the halfpipe skater', () => {
+  const { length, deck, height } = HALFPIPE;
+  const cycle = 2 * (SKATE_RIDE + SKATE_AIR);
+
+  it('shapes the pipe with a deck at each end and a flat bottom', () => {
+    expect(halfpipeHeight(0)).toBe(height);
+    expect(halfpipeHeight(deck)).toBe(height);
+    expect(halfpipeHeight(length - deck)).toBe(height);
+    expect(halfpipeHeight(length / 2)).toBe(0);
+    expect(halfpipeHeight(deck + 0.3)).toBeGreaterThan(halfpipeHeight(deck + 0.6));
+  });
+
+  it('rides the surface between the lips', () => {
+    for (let t = 0; t < SKATE_RIDE; t += 0.1) {
+      const pose = skaterAt(t);
+      expect(pose.trick).toBeUndefined();
+      expect(pose.u).toBeGreaterThan(deck);
+      expect(pose.u).toBeLessThan(length - deck);
+      expect(pose.z).toBeCloseTo(halfpipeHeight(pose.u));
+    }
+    expect(skaterAt(SKATE_RIDE / 2).z).toBeCloseTo(0);
+  });
+
+  it('does a Christ air above the right lip', () => {
+    const pose = skaterAt(SKATE_RIDE + SKATE_AIR / 2);
+    expect(pose.trick).toBe('christ-air');
+    expect(pose.u).toBeGreaterThan(length / 2);
+    expect(pose.z).toBeCloseTo(height + HALFPIPE.air);
+  });
+
+  it('does a 360 flip above the left lip', () => {
+    const pose = skaterAt(2 * SKATE_RIDE + SKATE_AIR + SKATE_AIR / 2);
+    expect(pose.trick).toBe('360-flip');
+    expect(pose.u).toBeLessThan(length / 2);
+    expect(pose.z).toBeCloseTo(height + HALFPIPE.air);
+  });
+
+  it('turns round in the air and heads back the other way', () => {
+    expect(skaterAt(0.1).dir).toBe(1);
+    expect(skaterAt(SKATE_RIDE + SKATE_AIR * 0.9).dir).toBe(-1);
+    expect(skaterAt(SKATE_RIDE + SKATE_AIR + 0.1).dir).toBe(-1);
+    expect(skaterAt(cycle - 0.05).dir).toBe(1);
+  });
+
+  it('moves smoothly round the whole run, over and over', () => {
+    let last = skaterAt(0);
+    for (let t = 0.01; t < cycle * 2; t += 0.01) {
+      const pose = skaterAt(t);
+      expect(Math.abs(pose.u - last.u)).toBeLessThan(0.1);
+      expect(Math.abs(pose.z - last.z)).toBeLessThan(2);
+      last = pose;
     }
   });
 });

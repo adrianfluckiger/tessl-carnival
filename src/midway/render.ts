@@ -3,12 +3,16 @@ import bannerUrl from './aidevcon-banner.png';
 import { palette } from './palette';
 import {
   CART_KINDS,
+  HALFPIPE,
+  halfpipeHeight,
+  skaterAt,
   toScreen,
   type BoothSlot,
   type MidwayMap,
   type Point,
   type Prop,
   type Rect,
+  type SkaterPose,
   type Walker,
 } from './world';
 
@@ -1204,6 +1208,173 @@ function posse(ctx: Ctx, prop: Prop, t: number) {
   });
 }
 
+/** Screen pixels a tile along x covers, for tilting things that lean on a slope. */
+const TILE_RUN = 16 * Math.SQRT2;
+
+/** A skateboard in the skater's own frame: `axis` runs nose to tail, `flip` rolls it, `spin` turns it. */
+function skateboard(ctx: Ctx, c: Pt, axis: Pt, flip: number, spin: number) {
+  const half = Math.max(1.2, 7 * Math.abs(Math.cos(spin)));
+  const across: Pt = [-axis[1], axis[0]];
+  const thick = 1 + 2.2 * Math.abs(Math.sin(flip));
+  const gripUp = Math.cos(flip) >= 0;
+  const point = (along: number, side: number): Pt => [
+    c[0] + axis[0] * along + across[0] * side,
+    c[1] + axis[1] * along + across[1] * side,
+  ];
+  for (const end of [-1, 1]) {
+    const w = point(end * half * 0.65, (gripUp ? 1 : -1) * (thick / 2 + 1));
+    oval(ctx, w[0], w[1], 1.2, 1.2, palette.cream);
+  }
+  poly(
+    ctx,
+    [
+      point(-half, -thick / 2),
+      point(half, -thick / 2),
+      point(half, thick / 2),
+      point(-half, thick / 2),
+    ],
+    gripUp ? palette.ink : palette.red,
+  );
+}
+
+/**
+ * The skater, drawn upright with their feet at (0, 0). `board` is the
+ * halfpipe's direction in this frame, so the board lies along the pipe.
+ */
+function skater(ctx: Ctx, pose: SkaterPose, board: Pt) {
+  const s = pose.progress;
+  const flip = pose.trick === '360-flip' ? s : 0;
+  const tuck = Math.sin(Math.PI * flip);
+  const christ = pose.trick === 'christ-air' ? Math.min(1, 2.2 * Math.sin(Math.PI * s)) : 0;
+  const dir = pose.dir;
+  const hip = -9 + 3 * tuck + (pose.trick ? 0 : 1);
+  const shoulder = hip - 8;
+  const reach = lerp(0.7, Math.PI / 2, christ);
+  const hand = (side: number): Pt => [
+    side * (3.5 + 7 * Math.sin(reach)),
+    shoulder + 1 + 7 * Math.cos(reach),
+  ];
+
+  // Under the feet, or popped away from them, or held up in the front hand.
+  // The front hand is the one they rode in with, so it stays the same hand
+  // when they turn at the top of the air.
+  const under: Pt = [0, 2 + 7 * tuck];
+  const held = hand(s < 0.5 ? dir : -dir);
+  const centre: Pt = [lerp(under[0], held[0], christ), lerp(under[1], held[1], christ)];
+  const axisX = lerp(board[0], 0, christ);
+  const axisY = lerp(board[1], 1, christ);
+  const length = Math.hypot(axisX, axisY);
+  skateboard(ctx, centre, [axisX / length, axisY / length], Math.PI * 2 * flip, Math.PI * 2 * flip);
+
+  const look = {
+    skin: palette.skins[1],
+    shirt: palette.shirts[1],
+    pants: palette.pants[0],
+    helmet: palette.red,
+  };
+  const feet = 3.2 * (1 - 0.7 * christ);
+  for (const side of [-1, 1]) {
+    stroke(
+      ctx,
+      [
+        [side * 1.4, hip],
+        [side * (2.6 + 2 * tuck), (hip - tuck * 2) / 2],
+        [side * feet, 0],
+      ],
+      look.pants,
+      2.6,
+    );
+  }
+  ctx.fillStyle = look.shirt;
+  ctx.beginPath();
+  ctx.roundRect(-3.5, shoulder - 1.5, 7, 9.5, 3);
+  ctx.fill();
+  for (const side of [-1, 1]) {
+    stroke(ctx, [[side * 3.5, shoulder + 1], hand(side)], look.skin, 2);
+  }
+  const head = shoulder - 5.5;
+  oval(ctx, 0, head, 4, 4, look.skin);
+  ctx.fillStyle = look.helmet;
+  ctx.beginPath();
+  ctx.arc(0, head - 0.5, 4.4, Math.PI, Math.PI * 2);
+  ctx.fill();
+  oval(ctx, -1.5 + dir, head + 0.2, 0.6, 0.7, palette.ink);
+  oval(ctx, 1.5 + dir, head + 0.2, 0.6, 0.7, palette.ink);
+}
+
+/**
+ * A wooden halfpipe running along x, with a skater riding it: a Christ air
+ * above the right lip and a 360 flip above the left one.
+ */
+function halfpipe(ctx: Ctx, prop: Prop, t: number) {
+  const { length, deck, height } = HALFPIPE;
+  const x0 = prop.x;
+  const far = prop.y + 0.4;
+  const near = prop.y + prop.h - 0.4;
+  poly(ctx, rectPoints({ x: x0 + 0.15, y: far + 0.15, w: length, h: near - far }), palette.shadow);
+
+  const steps = 40;
+  const profile: Pt[] = [];
+  for (let i = 0; i < steps; i++) {
+    const u0 = (i / steps) * length;
+    const u1 = ((i + 1) / steps) * length;
+    const z0 = halfpipeHeight(u0);
+    const z1 = halfpipeHeight(u1);
+    const color = z1 < z0 ? palette.woodLight : z1 > z0 ? palette.wood : palette.board;
+    poly(
+      ctx,
+      [at(x0 + u0, far, z0), at(x0 + u1, far, z1), at(x0 + u1, near, z1), at(x0 + u0, near, z0)],
+      color,
+    );
+    profile.push(at(x0 + u0, near, z0));
+  }
+  profile.push(at(x0 + length, near, height));
+  for (const lip of [deck, length - deck]) {
+    stroke(ctx, [at(x0 + lip, far, height), at(x0 + lip, near, height)], palette.metal, 1.6);
+  }
+
+  const pose = skaterAt(t);
+  const mid = prop.y + prop.h / 2;
+  const ground = at(x0 + pose.u, mid, halfpipeHeight(pose.u));
+  oval(ctx, ground[0], ground[1], 5, 2, palette.shadow);
+  // Lean into the ramp, straightening up at the top of an air. `tilt` is the
+  // lean in the world; `lean` is how far that turns the skater on screen.
+  const air = pose.trick ? Math.abs(1 - 2 * pose.progress) : 1;
+  const slope = ((halfpipeHeight(pose.u + 0.01) - halfpipeHeight(pose.u - 0.01)) / 0.02) * air;
+  const tilt = 0.55 * Math.atan(slope / TILE_RUN);
+  const lean = Math.atan2(
+    -Math.sin(tilt) * Math.SQRT1_2,
+    (Math.sin(tilt) * Math.SQRT1_2) / 2 + Math.cos(tilt),
+  );
+  const run = Math.hypot(16, 8 - slope);
+  const tx = 16 / run;
+  const ty = (8 - slope) / run;
+  const board: Pt = [
+    tx * Math.cos(lean) + ty * Math.sin(lean),
+    -tx * Math.sin(lean) + ty * Math.cos(lean),
+  ];
+  const feet = at(x0 + pose.u, mid, pose.z);
+  ctx.save();
+  ctx.translate(feet[0], feet[1]);
+  ctx.rotate(lean);
+  skater(ctx, pose, board);
+  ctx.restore();
+
+  // The end of the right deck, then the side facing the midway, with its
+  // struts. They hide the skater whenever they ride behind them.
+  const end = x0 + length;
+  poly(
+    ctx,
+    [at(end, far, 0), at(end, near, 0), at(end, near, height), at(end, far, height)],
+    palette.woodDark,
+  );
+  poly(ctx, [at(x0, near, 0), ...profile, at(end, near, 0)], palette.wood);
+  for (let i = 1; i < length; i++) {
+    stroke(ctx, [at(x0 + i, near, 0), at(x0 + i, near, halfpipeHeight(i))], palette.woodDark, 1);
+  }
+  stroke(ctx, profile, palette.woodDark, 1);
+}
+
 /** How high a billboard's sign stands, to the bottom of its board. */
 const BILLBOARD_HEIGHT = 40;
 
@@ -1672,6 +1843,7 @@ const PROP_HEIGHTS: Record<Prop['kind'], number> = {
   balloons: 52,
   jugglers: 60,
   posse: 34,
+  halfpipe: HALFPIPE.height + HALFPIPE.air + 40,
   'bunting-pole': 0,
   billboard: BILLBOARD_HEIGHT + 40,
 };
@@ -1876,6 +2048,8 @@ export function drawProp(ctx: Ctx, prop: Prop, t: number) {
       return jugglers(ctx, prop, t);
     case 'posse':
       return posse(ctx, prop, t);
+    case 'halfpipe':
+      return halfpipe(ctx, prop, t);
     case 'bunting-pole':
       return buntingPole(ctx, prop);
     case 'billboard':

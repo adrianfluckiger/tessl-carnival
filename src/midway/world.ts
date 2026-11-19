@@ -49,6 +49,7 @@ export type PropKind =
   | 'balloons'
   | 'jugglers'
   | 'posse'
+  | 'halfpipe'
   | 'bunting-pole'
   | 'billboard';
 
@@ -144,7 +145,8 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
   add('ferris-wheel', 6, 1, 4, 3);
   add('big-top', AVENUE_X - 1, 1, 4, 4);
   add('peaked-tent', 15, 1, 4, 3, 0);
-  add('round-tent', 19, 1, 4, 4, 1);
+  // A skateboard halfpipe in the back right corner, running along x.
+  add('halfpipe', 19, 1, HALFPIPE.length, 4);
   add('planter', 5, 5);
   add('planter', 9, 5);
   add('planter', 14, 5);
@@ -232,6 +234,77 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
     // Just inside the gate, off to the side so the arch doesn't hide the player.
     spawn: { x: AVENUE_X + 3.5, y: height - 3 },
   };
+}
+
+/**
+ * The halfpipe's shape along its length, in tiles from its left end: a flat
+ * deck at each end, a curved ramp down from each lip and a flat bottom.
+ * Heights are in pixels, like everything drawn above the ground.
+ */
+export const HALFPIPE = { length: 4, deck: 0.45, ramp: 1.05, height: 24, air: 26 };
+
+/** How high the halfpipe's surface is, in pixels, at `u` tiles along it. */
+export function halfpipeHeight(u: number): number {
+  const { length, deck, ramp, height } = HALFPIPE;
+  const fromLip = Math.min(u - deck, length - deck - u);
+  if (fromLip <= 0) return height;
+  const s = Math.max(0, 1 - fromLip / ramp);
+  return height * s * s;
+}
+
+/** Seconds the skater takes to ride from one lip to the other. */
+export const SKATE_RIDE = 1.5;
+/** Seconds the skater spends in the air above a lip. */
+export const SKATE_AIR = 0.9;
+
+/** The 360 flip comes off the left lip, the Christ air off the right one. */
+export type SkateTrick = '360-flip' | 'christ-air';
+
+export interface SkaterPose {
+  /** Tiles along the halfpipe from its left end. */
+  u: number;
+  /** Pixels above the ground. */
+  z: number;
+  /** 1 while heading towards the right end, -1 towards the left. */
+  dir: 1 | -1;
+  /** The trick in the air, if the skater is above a lip. */
+  trick?: SkateTrick;
+  /** How far through the trick, from 0 to 1. */
+  progress: number;
+}
+
+/**
+ * Where the skater is `t` seconds into their run: down the pipe and up to the
+ * right lip for a Christ air, then back across to the left lip for a 360 flip,
+ * over and over.
+ */
+export function skaterAt(t: number): SkaterPose {
+  const { length, deck, height, air } = HALFPIPE;
+  const left = deck + 0.05;
+  const right = length - deck - 0.05;
+  const cycle = 2 * (SKATE_RIDE + SKATE_AIR);
+  let time = ((t % cycle) + cycle) % cycle;
+  const ride = (from: number, to: number, dir: 1 | -1): SkaterPose => {
+    const s = time / SKATE_RIDE;
+    const u = lerpNumber(from, to, (1 - Math.cos(Math.PI * s)) / 2);
+    return { u, z: halfpipeHeight(u), dir, progress: s };
+  };
+  const pop = (u: number, dir: 1 | -1, trick: SkateTrick): SkaterPose => {
+    const s = time / SKATE_AIR;
+    const lip = halfpipeHeight(u);
+    return { u, z: lip + (height + air - lip) * 4 * s * (1 - s), dir, trick, progress: s };
+  };
+  if (time < SKATE_RIDE) return ride(left, right, 1);
+  time -= SKATE_RIDE;
+  if (time < SKATE_AIR) return pop(right, time < SKATE_AIR / 2 ? 1 : -1, 'christ-air');
+  time -= SKATE_AIR;
+  if (time < SKATE_RIDE) return ride(right, left, -1);
+  time -= SKATE_RIDE;
+  return pop(left, time < SKATE_AIR / 2 ? -1 : 1, '360-flip');
+}
+
+function lerpNumber(a: number, b: number, s: number): number {
+  return a + (b - a) * s;
 }
 
 /** Tile position to isometric screen pixels, relative to tile (0, 0)'s top corner. */
