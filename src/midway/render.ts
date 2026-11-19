@@ -1256,8 +1256,10 @@ function skater(ctx: Ctx, pose: SkaterPose, board: Pt) {
   ];
 
   // Under the feet, or popped away from them, or held up in the front hand.
+  // The front hand is the one they rode in with, so it stays the same hand
+  // when they turn at the top of the air.
   const under: Pt = [0, 2 + 7 * tuck];
-  const held = hand(dir);
+  const held = hand(s < 0.5 ? dir : -dir);
   const centre: Pt = [lerp(under[0], held[0], christ), lerp(under[1], held[1], christ)];
   const axisX = lerp(board[0], 0, christ);
   const axisY = lerp(board[1], 1, christ);
