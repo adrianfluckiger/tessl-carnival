@@ -407,7 +407,7 @@ export interface RailSkaterPose extends SkaterPose {
 
 /** How long each part of the stair skater's run takes, in seconds. */
 export const RAIL_TIMES = {
-  approach: 0.5,
+  approach: 0.3,
   flip: 0.7,
   slide: 1.1,
   hop: 0.4,
@@ -428,7 +428,8 @@ export function railSkaterAt(t: number): RailSkaterPose {
   let time = ((t % cycle) + cycle) % cycle;
   const mid = (railY + bankY) / 2;
   const across = (bankY - railY) / 2;
-  const pop = deck - 0.1;
+  // Pop well before the handrail's end, so the flip is above it by the time it gets there.
+  const pop = deck - 0.35;
   const on = deck + 0.3;
   const off = deck + stairs - 0.15;
   const land = deck + stairs + 0.3;

@@ -422,6 +422,15 @@ describe('the stair set skater', () => {
     expect(pose.z).toBeGreaterThan(railHeight(pose.u));
   });
 
+  it('clears the handrail all the way onto it, from its front end', () => {
+    for (let t = times.approach; t < sliding; t += 0.01) {
+      const pose = railSkaterAt(t);
+      // The handrail is drawn from just short of the deck's edge, at its top height there.
+      if (pose.u < deck - 0.1) continue;
+      expect(pose.z).toBeGreaterThanOrEqual(railHeight(Math.max(pose.u, deck)) - 0.5);
+    }
+  });
+
   it('tailslides down the handrail', () => {
     for (let t = sliding; t < sliding + times.slide; t += 0.1) {
       const pose = railSkaterAt(t);
