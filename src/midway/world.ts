@@ -50,8 +50,6 @@ export type PropKind =
   | 'jugglers'
   | 'posse'
   | 'halfpipe'
-  | 'quarter-pipe'
-  | 'stair-rail'
   | 'bunting-pole'
   | 'billboard';
 
@@ -185,15 +183,15 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
     }
   }
 
-  // Beside the booths: a street skating course on the left, a tent and carts
-  // on the right.
+  // Beside the booths: wagons and carts on the left, a tent and carts on the right.
   const side = FIRST_ROW_Y;
   // A billboard for AI DevCon, rising above the peaked tent on the right.
   add('billboard', 19, side - 1, 3, 1);
-  // A quarter pipe against the left hedge, facing the midway, and a stair set
-  // with a handrail down the middle beside it.
-  add('quarter-pipe', 1, side, QUARTER_PIPE.length, 6);
-  add('stair-rail', 4, side - 1, STAIR_SET.length, STAIR_SET.width);
+  add('wagon', 2, side, 3, 1, 0);
+  add('wagon', 2, side + 2, 3, 1, 1);
+  add('cart', 6, side, 1, 1, 0);
+  add('bench', 5, side + 3);
+  add('balloons', 1, side + 4);
   add('planter', 6, side + 5);
   add('peaked-tent', 18, side, 4, 3, 1);
   add('cart', 17, side + 4, 1, 1, 1);
@@ -259,12 +257,8 @@ export const SKATE_RIDE = 1.5;
 /** Seconds the skater spends in the air above a lip. */
 export const SKATE_AIR = 0.9;
 
-/**
- * On the halfpipe, the 360 flip comes off the left lip and the Christ air off
- * the right one. On the street course, the kickflip 180 is above the quarter
- * pipe, and the 360 flip leads into a tailslide down the handrail.
- */
-export type SkateTrick = '360-flip' | 'christ-air' | 'kickflip-180' | 'tailslide';
+/** The 360 flip comes off the left lip, the Christ air off the right one. */
+export type SkateTrick = '360-flip' | 'christ-air';
 
 export interface SkaterPose {
   /** Tiles along the halfpipe from its left end. */
@@ -273,7 +267,7 @@ export interface SkaterPose {
   z: number;
   /** 1 while heading towards the right end, -1 towards the left. */
   dir: 1 | -1;
-  /** The trick they're doing, if any. */
+  /** The trick in the air, if the skater is above a lip. */
   trick?: SkateTrick;
   /** How far through the trick, from 0 to 1. */
   progress: number;
@@ -307,194 +301,6 @@ export function skaterAt(t: number): SkaterPose {
   if (time < SKATE_RIDE) return ride(right, left, -1);
   time -= SKATE_RIDE;
   return pop(left, time < SKATE_AIR / 2 ? -1 : 1, '360-flip');
-}
-
-/**
- * The quarter pipe's shape along x, in tiles from its back against the hedge:
- * a flat deck, a curved ramp down from the lip and a flat run out.
- */
-export const QUARTER_PIPE = { length: 2, deck: 0.3, ramp: 1.05, height: 26, air: 24 };
-
-/** How high the quarter pipe's surface is, in pixels, at `u` tiles from its back. */
-export function quarterPipeHeight(u: number): number {
-  const { deck, ramp, height } = QUARTER_PIPE;
-  if (u <= deck) return height;
-  const s = Math.max(0, 1 - (u - deck) / ramp);
-  return height * s * s;
-}
-
-/** Seconds the quarter pipe skater takes to ride from the run out up to the lip. */
-export const QUARTER_RIDE = 1.2;
-/** Seconds the quarter pipe skater spends in the air above the lip. */
-export const QUARTER_AIR = 0.8;
-/** Seconds the quarter pipe skater takes to kick turn at the end of the run out. */
-export const QUARTER_TURN = 0.5;
-
-/**
- * Where the quarter pipe skater is `t` seconds into their run: up the ramp
- * for a kickflip 180 above the lip, down and out across the flat, then a
- * kick turn to face the ramp again, over and over.
- */
-export function quarterSkaterAt(t: number): SkaterPose {
-  const { length, deck, height, air } = QUARTER_PIPE;
-  const lip = deck + 0.05;
-  const out = length - 0.2;
-  const cycle = 2 * QUARTER_RIDE + QUARTER_AIR + QUARTER_TURN;
-  let time = ((t % cycle) + cycle) % cycle;
-  const ride = (from: number, to: number, dir: 1 | -1): SkaterPose => {
-    const s = time / QUARTER_RIDE;
-    const u = lerpNumber(from, to, (1 - Math.cos(Math.PI * s)) / 2);
-    return { u, z: quarterPipeHeight(u), dir, progress: s };
-  };
-  if (time < QUARTER_RIDE) return ride(out, lip, -1);
-  time -= QUARTER_RIDE;
-  if (time < QUARTER_AIR) {
-    const s = time / QUARTER_AIR;
-    const z = lerpNumber(quarterPipeHeight(lip), height + air, 4 * s * (1 - s));
-    return { u: lip, z, dir: s < 0.5 ? -1 : 1, trick: 'kickflip-180', progress: s };
-  }
-  time -= QUARTER_AIR;
-  if (time < QUARTER_RIDE) return ride(lip, out, 1);
-  time -= QUARTER_RIDE;
-  const s = time / QUARTER_TURN;
-  return { u: out, z: 0, dir: s < 0.5 ? 1 : -1, progress: s };
-}
-
-/**
- * The stair set, in tiles from its back corner: a deck along its back, stairs
- * down along x with a handrail down their middle, a bank beside the stairs to
- * ride back up, and a flat run out at the bottom. Heights are in pixels.
- */
-export const STAIR_SET = {
-  length: 4,
-  width: 4,
-  deck: 1,
-  stairs: 2,
-  steps: 6,
-  /** How far along y the stairs reach; the bank fills the rest. */
-  stairWidth: 2.4,
-  /** How far along y the handrail runs. */
-  railY: 1.2,
-  /** How far along y the skater rides back up the bank. */
-  bankY: 3.2,
-  height: 24,
-  /** How high the handrail stands above the stairs' nosing. */
-  rail: 12,
-  air: 14,
-};
-
-/**
- * How high the stair set's slope is at `u` tiles along it: the line along
- * the stairs' nosing, which is also the bank's surface.
- */
-export function stairSlopeHeight(u: number): number {
-  const { deck, stairs, height } = STAIR_SET;
-  if (u <= deck) return height;
-  return height * Math.max(0, 1 - (u - deck) / stairs);
-}
-
-/** How high the top of the handrail is at `u` tiles along the stair set. */
-export function railHeight(u: number): number {
-  return stairSlopeHeight(u) + STAIR_SET.rail;
-}
-
-export interface RailSkaterPose extends SkaterPose {
-  /** Tiles across the stair set from its back corner. */
-  v: number;
-  /** The way they're riding, along the ground, in tiles. */
-  heading: Point;
-}
-
-/** How long each part of the stair skater's run takes, in seconds. */
-export const RAIL_TIMES = {
-  approach: 0.3,
-  flip: 0.7,
-  slide: 1.1,
-  hop: 0.4,
-  bottomTurn: 0.9,
-  bank: 1.4,
-  topTurn: 0.9,
-} as const;
-
-/**
- * Where the stair set skater is `t` seconds into their run: along the deck,
- * a 360 flip onto the handrail, a tailslide down it, off onto the run out, a
- * turn, back up the bank and a turn on the deck, over and over.
- */
-export function railSkaterAt(t: number): RailSkaterPose {
-  const { deck, stairs, railY, bankY, height, air } = STAIR_SET;
-  const times = RAIL_TIMES;
-  const cycle = Object.values(times).reduce((a, b) => a + b, 0);
-  let time = ((t % cycle) + cycle) % cycle;
-  const mid = (railY + bankY) / 2;
-  const across = (bankY - railY) / 2;
-  // Pop well before the handrail's end, so the flip is above it by the time it gets there.
-  const pop = deck - 0.35;
-  const on = deck + 0.3;
-  const off = deck + stairs - 0.15;
-  const land = deck + stairs + 0.3;
-  const top = 0.55;
-  const pose = (
-    u: number,
-    v: number,
-    z: number,
-    heading: Point,
-    progress: number,
-    trick?: SkateTrick,
-  ): RailSkaterPose => ({
-    u,
-    v,
-    z,
-    heading,
-    progress,
-    trick,
-    dir: heading.x - heading.y >= 0 ? 1 : -1,
-  });
-  const forward = { x: 1, y: 0 };
-  const back = { x: -1, y: 0 };
-
-  if (time < times.approach) {
-    const s = time / times.approach;
-    return pose(lerpNumber(top, pop, s), railY, height, forward, s);
-  }
-  time -= times.approach;
-  if (time < times.flip) {
-    const s = time / times.flip;
-    const z = lerpNumber(height, railHeight(on), s) + air * 4 * s * (1 - s);
-    return pose(lerpNumber(pop, on, s), railY, z, forward, s, '360-flip');
-  }
-  time -= times.flip;
-  if (time < times.slide) {
-    const s = time / times.slide;
-    const u = lerpNumber(on, off, s);
-    return pose(u, railY, railHeight(u), forward, s, 'tailslide');
-  }
-  time -= times.slide;
-  if (time < times.hop) {
-    const s = time / times.hop;
-    const z = lerpNumber(railHeight(off), 0, s) + 6 * 4 * s * (1 - s);
-    return pose(lerpNumber(off, land, s), railY, z, forward, s);
-  }
-  time -= times.hop;
-  // Half an ellipse round the bottom of the bank, from the rail's line to the bank's.
-  if (time < times.bottomTurn) {
-    const s = time / times.bottomTurn;
-    const a = Math.PI * s;
-    const heading = { x: Math.cos(a), y: Math.sin(a) };
-    return pose(land + 0.5 * Math.sin(a), mid - across * Math.cos(a), 0, heading, s);
-  }
-  time -= times.bottomTurn;
-  if (time < times.bank) {
-    const s = time / times.bank;
-    const u = lerpNumber(land, top, s);
-    return pose(u, bankY, stairSlopeHeight(u), back, s);
-  }
-  time -= times.bank;
-  // And half an ellipse round on the deck, back to the rail's line.
-  const s = time / times.topTurn;
-  const a = Math.PI * s;
-  const heading = { x: -Math.cos(a), y: -Math.sin(a) };
-  return pose(top - 0.45 * Math.sin(a), mid + across * Math.cos(a), height, heading, s);
 }
 
 function lerpNumber(a: number, b: number, s: number): number {

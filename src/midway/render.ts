@@ -5,14 +5,7 @@ import {
   CART_KINDS,
   HALFPIPE,
   halfpipeHeight,
-  QUARTER_PIPE,
-  quarterPipeHeight,
-  quarterSkaterAt,
-  railHeight,
-  railSkaterAt,
   skaterAt,
-  STAIR_SET,
-  stairSlopeHeight,
   toScreen,
   type BoothSlot,
   type MidwayMap,
@@ -1244,35 +1237,15 @@ function skateboard(ctx: Ctx, c: Pt, axis: Pt, flip: number, spin: number) {
   );
 }
 
-interface SkaterLook {
-  skin: string;
-  shirt: string;
-  pants: string;
-  helmet: string;
-}
-
-const HALFPIPE_SKATER: SkaterLook = {
-  skin: palette.skins[1],
-  shirt: palette.shirts[1],
-  pants: palette.pants[0],
-  helmet: palette.red,
-};
-
 /**
- * The skater, drawn upright with their feet at (0, 0). `board` is the ramp's
- * direction in this frame, so the board lies along it. In a tailslide it
- * points the way they slide, and the board sits forward under the back foot.
+ * The skater, drawn upright with their feet at (0, 0). `board` is the
+ * halfpipe's direction in this frame, so the board lies along the pipe.
  */
-function skater(ctx: Ctx, pose: SkaterPose, board: Pt, look = HALFPIPE_SKATER) {
+function skater(ctx: Ctx, pose: SkaterPose, board: Pt) {
   const s = pose.progress;
-  const flipping = pose.trick === '360-flip' || pose.trick === 'kickflip-180';
-  const flip = flipping ? s : 0;
-  // A 360 flip spins the board a whole turn; a kickflip 180 turns it half way
-  // round, with the skater.
-  const spin = pose.trick === 'kickflip-180' ? Math.PI * flip : Math.PI * 2 * flip;
+  const flip = pose.trick === '360-flip' ? s : 0;
   const tuck = Math.sin(Math.PI * flip);
   const christ = pose.trick === 'christ-air' ? Math.min(1, 2.2 * Math.sin(Math.PI * s)) : 0;
-  const slide = pose.trick === 'tailslide' ? 4 : 0;
   const dir = pose.dir;
   const hip = -9 + 3 * tuck + (pose.trick ? 0 : 1);
   const shoulder = hip - 8;
@@ -1285,30 +1258,20 @@ function skater(ctx: Ctx, pose: SkaterPose, board: Pt, look = HALFPIPE_SKATER) {
   // Under the feet, or popped away from them, or held up in the front hand.
   // The front hand is the one they rode in with, so it stays the same hand
   // when they turn at the top of the air.
-  const under: Pt = [board[0] * slide, 2 + 7 * tuck + board[1] * slide];
+  const under: Pt = [0, 2 + 7 * tuck];
   const held = hand(s < 0.5 ? dir : -dir);
   const centre: Pt = [lerp(under[0], held[0], christ), lerp(under[1], held[1], christ)];
   const axisX = lerp(board[0], 0, christ);
   const axisY = lerp(board[1], 1, christ);
   const length = Math.hypot(axisX, axisY);
-  skateboard(ctx, centre, [axisX / length, axisY / length], Math.PI * 2 * flip, spin);
-  if (slide) {
-    // Sparks off the tail where it grinds the rail.
-    for (let i = 0; i < 3; i++) {
-      const flicker = Math.sin(s * 47 + i * 2.1);
-      if (flicker < 0) continue;
-      const back = 7 + 3 * i * flicker;
-      oval(
-        ctx,
-        centre[0] - board[0] * back,
-        centre[1] - board[1] * back - i,
-        0.9,
-        0.9,
-        palette.gold,
-      );
-    }
-  }
+  skateboard(ctx, centre, [axisX / length, axisY / length], Math.PI * 2 * flip, Math.PI * 2 * flip);
 
+  const look = {
+    skin: palette.skins[1],
+    shirt: palette.shirts[1],
+    pants: palette.pants[0],
+    helmet: palette.red,
+  };
   const feet = 3.2 * (1 - 0.7 * christ);
   for (const side of [-1, 1]) {
     stroke(
@@ -1337,40 +1300,6 @@ function skater(ctx: Ctx, pose: SkaterPose, board: Pt, look = HALFPIPE_SKATER) {
   ctx.fill();
   oval(ctx, -1.5 + dir, head + 0.2, 0.6, 0.7, palette.ink);
   oval(ctx, 1.5 + dir, head + 0.2, 0.6, 0.7, palette.ink);
-}
-
-/**
- * Draws a skater riding a ramp that runs along x, with their feet at `feet`.
- * They lean into the ramp, straightening up at the top of an air.
- */
-function rideRamp(
-  ctx: Ctx,
-  feet: Pt,
-  pose: SkaterPose,
-  height: (u: number) => number,
-  look = HALFPIPE_SKATER,
-) {
-  // `tilt` is the lean in the world; `lean` is how far that turns the skater
-  // on screen.
-  const air = pose.trick ? Math.abs(1 - 2 * pose.progress) : 1;
-  const slope = ((height(pose.u + 0.01) - height(pose.u - 0.01)) / 0.02) * air;
-  const tilt = 0.55 * Math.atan(slope / TILE_RUN);
-  const lean = Math.atan2(
-    -Math.sin(tilt) * Math.SQRT1_2,
-    (Math.sin(tilt) * Math.SQRT1_2) / 2 + Math.cos(tilt),
-  );
-  const run = Math.hypot(16, 8 - slope);
-  const tx = 16 / run;
-  const ty = (8 - slope) / run;
-  const board: Pt = [
-    tx * Math.cos(lean) + ty * Math.sin(lean),
-    -tx * Math.sin(lean) + ty * Math.cos(lean),
-  ];
-  ctx.save();
-  ctx.translate(feet[0], feet[1]);
-  ctx.rotate(lean);
-  skater(ctx, pose, board, look);
-  ctx.restore();
 }
 
 /**
@@ -1408,7 +1337,28 @@ function halfpipe(ctx: Ctx, prop: Prop, t: number) {
   const mid = prop.y + prop.h / 2;
   const ground = at(x0 + pose.u, mid, halfpipeHeight(pose.u));
   oval(ctx, ground[0], ground[1], 5, 2, palette.shadow);
-  rideRamp(ctx, at(x0 + pose.u, mid, pose.z), pose, halfpipeHeight);
+  // Lean into the ramp, straightening up at the top of an air. `tilt` is the
+  // lean in the world; `lean` is how far that turns the skater on screen.
+  const air = pose.trick ? Math.abs(1 - 2 * pose.progress) : 1;
+  const slope = ((halfpipeHeight(pose.u + 0.01) - halfpipeHeight(pose.u - 0.01)) / 0.02) * air;
+  const tilt = 0.55 * Math.atan(slope / TILE_RUN);
+  const lean = Math.atan2(
+    -Math.sin(tilt) * Math.SQRT1_2,
+    (Math.sin(tilt) * Math.SQRT1_2) / 2 + Math.cos(tilt),
+  );
+  const run = Math.hypot(16, 8 - slope);
+  const tx = 16 / run;
+  const ty = (8 - slope) / run;
+  const board: Pt = [
+    tx * Math.cos(lean) + ty * Math.sin(lean),
+    -tx * Math.sin(lean) + ty * Math.cos(lean),
+  ];
+  const feet = at(x0 + pose.u, mid, pose.z);
+  ctx.save();
+  ctx.translate(feet[0], feet[1]);
+  ctx.rotate(lean);
+  skater(ctx, pose, board);
+  ctx.restore();
 
   // The end of the right deck, then the side facing the midway, with its
   // struts. They hide the skater whenever they ride behind them.
@@ -1423,163 +1373,6 @@ function halfpipe(ctx: Ctx, prop: Prop, t: number) {
     stroke(ctx, [at(x0 + i, near, 0), at(x0 + i, near, halfpipeHeight(i))], palette.woodDark, 1);
   }
   stroke(ctx, profile, palette.woodDark, 1);
-}
-
-const QUARTER_PIPE_SKATER: SkaterLook = {
-  skin: palette.skins[3],
-  shirt: palette.shirts[2],
-  pants: palette.pants[1],
-  helmet: palette.blue,
-};
-
-const RAIL_SKATER: SkaterLook = {
-  skin: palette.skins[0],
-  shirt: palette.shirts[3],
-  pants: palette.pants[2],
-  helmet: palette.gold,
-};
-
-/**
- * A wooden quarter pipe with its back to the hedge, ramping down along x
- * towards the midway, and a skater doing a kickflip 180 above its lip.
- */
-function quarterPipe(ctx: Ctx, prop: Prop, t: number) {
-  const { length, deck, height } = QUARTER_PIPE;
-  const x0 = prop.x;
-  const far = prop.y + 0.3;
-  const near = prop.y + prop.h - 0.3;
-  poly(
-    ctx,
-    rectPoints({ x: x0 + 0.15, y: far + 0.15, w: length - 0.6, h: near - far }),
-    palette.shadow,
-  );
-
-  const steps = 24;
-  const profile: Pt[] = [];
-  for (let i = 0; i < steps; i++) {
-    const u0 = (i / steps) * length;
-    const u1 = ((i + 1) / steps) * length;
-    const z0 = quarterPipeHeight(u0);
-    const z1 = quarterPipeHeight(u1);
-    const color = z1 < z0 ? palette.woodLight : palette.board;
-    poly(
-      ctx,
-      [at(x0 + u0, far, z0), at(x0 + u1, far, z1), at(x0 + u1, near, z1), at(x0 + u0, near, z0)],
-      color,
-    );
-    profile.push(at(x0 + u0, near, z0));
-  }
-  profile.push(at(x0 + length, near, 0));
-  stroke(ctx, [at(x0 + deck, far, height), at(x0 + deck, near, height)], palette.metal, 1.6);
-
-  const pose = quarterSkaterAt(t);
-  const mid = prop.y + prop.h / 2;
-  const ground = at(x0 + pose.u, mid, quarterPipeHeight(pose.u));
-  oval(ctx, ground[0], ground[1], 5, 2, palette.shadow);
-  rideRamp(ctx, at(x0 + pose.u, mid, pose.z), pose, quarterPipeHeight, QUARTER_PIPE_SKATER);
-
-  // The side facing the midway, with its struts. It hides the skater
-  // whenever they ride behind it.
-  poly(ctx, [at(x0, near, 0), ...profile], palette.wood);
-  for (const u of [deck, deck + 0.4]) {
-    stroke(ctx, [at(x0 + u, near, 0), at(x0 + u, near, quarterPipeHeight(u))], palette.woodDark, 1);
-  }
-  stroke(ctx, profile, palette.woodDark, 1);
-}
-
-/**
- * A concrete stair set: a deck, stairs down along x with a handrail down
- * their middle, and a bank beside them. A skater rides off the deck, 360
- * flips onto the rail, tailslides down it, and rides back up the bank.
- */
-function stairRail(ctx: Ctx, prop: Prop, t: number) {
-  const { width, deck, stairs, steps, stairWidth, railY, height } = STAIR_SET;
-  const x0 = prop.x;
-  const y0 = prop.y;
-  const bottom = x0 + deck + stairs;
-  poly(ctx, rectPoints({ x: x0 + 0.15, y: y0 + 0.15, w: deck + stairs, h: width }), palette.shadow);
-
-  // The deck along the back, then each step down from it, back to front.
-  poly(ctx, rectPoints({ x: x0, y: y0, w: deck, h: width }, height), palette.concrete);
-  const tread = stairs / steps;
-  for (let k = 0; k < steps; k++) {
-    const u = x0 + deck + k * tread;
-    const above = (height * (steps - k)) / steps;
-    const z = (height * (steps - 1 - k)) / steps;
-    poly(
-      ctx,
-      [at(u, y0, z), at(u, y0 + stairWidth, z), at(u, y0 + stairWidth, above), at(u, y0, above)],
-      palette.concreteDark,
-    );
-    poly(ctx, rectPoints({ x: u, y: y0, w: tread, h: stairWidth }, z), palette.concrete);
-    stroke(ctx, [at(u, y0, above), at(u, y0 + stairWidth, above)], palette.concreteShade, 0.8);
-  }
-
-  // The handrail, on a post at each end.
-  const ry = y0 + railY;
-  const ends = [deck - 0.05, deck + stairs + 0.05];
-  for (const u of [deck + 0.15, deck + stairs - 0.15]) {
-    stroke(
-      ctx,
-      [at(x0 + u, ry, stairSlopeHeight(u) - 2), at(x0 + u, ry, railHeight(u))],
-      palette.metalShade,
-      1.6,
-    );
-  }
-  stroke(
-    ctx,
-    ends.map((u) => at(x0 + u, ry, railHeight(Math.min(Math.max(u, deck), deck + stairs)))),
-    palette.metal,
-    2,
-  );
-
-  // The bank beside the stairs, and the side facing the midway.
-  const by = y0 + stairWidth;
-  const side = y0 + width;
-  poly(
-    ctx,
-    [
-      at(x0 + deck, by, height),
-      at(bottom, by, 0),
-      at(bottom, side, 0),
-      at(x0 + deck, side, height),
-    ],
-    palette.concreteLight,
-  );
-  poly(
-    ctx,
-    [at(x0, side, 0), at(x0, side, height), at(x0 + deck, side, height), at(bottom, side, 0)],
-    palette.concreteShade,
-  );
-  stroke(ctx, [at(x0 + deck, y0, height), at(x0 + deck, side, height)], palette.concreteShade, 0.8);
-
-  const pose = railSkaterAt(t);
-  const { x: hx, y: hy } = pose.heading;
-  const u = x0 + pose.u;
-  const v = y0 + pose.v;
-  const onSlope = pose.trick === 'tailslide' || (!pose.trick && pose.v === STAIR_SET.bankY);
-  const slope = onSlope
-    ? ((stairSlopeHeight(pose.u + 0.01) - stairSlopeHeight(pose.u)) / 0.01) * hx
-    : 0;
-  const ground = at(u, v, Math.min(pose.z, stairSurface(pose.u, pose.v)));
-  oval(ctx, ground[0], ground[1], 5, 2, palette.shadow);
-  const dx = 16 * (hx - hy);
-  const dy = 8 * (hx + hy) - slope;
-  const run = Math.hypot(dx, dy);
-  const feet = at(u, v, pose.z);
-  ctx.save();
-  ctx.translate(feet[0], feet[1]);
-  skater(ctx, pose, [dx / run, dy / run], RAIL_SKATER);
-  ctx.restore();
-}
-
-/** How high the stair set's surface is under a point on it, in pixels. */
-function stairSurface(u: number, v: number): number {
-  const { deck, stairs, steps, stairWidth, height } = STAIR_SET;
-  if (u <= deck || v >= stairWidth) return stairSlopeHeight(u);
-  if (u >= deck + stairs) return 0;
-  const k = Math.floor(((u - deck) / stairs) * steps);
-  return (height * (steps - 1 - k)) / steps;
 }
 
 /** How high a billboard's sign stands, to the bottom of its board. */
@@ -2051,8 +1844,6 @@ const PROP_HEIGHTS: Record<Prop['kind'], number> = {
   jugglers: 60,
   posse: 34,
   halfpipe: HALFPIPE.height + HALFPIPE.air + 40,
-  'quarter-pipe': QUARTER_PIPE.height + QUARTER_PIPE.air + 40,
-  'stair-rail': STAIR_SET.height + STAIR_SET.rail + STAIR_SET.air + 40,
   'bunting-pole': 0,
   billboard: BILLBOARD_HEIGHT + 40,
 };
@@ -2259,10 +2050,6 @@ export function drawProp(ctx: Ctx, prop: Prop, t: number) {
       return posse(ctx, prop, t);
     case 'halfpipe':
       return halfpipe(ctx, prop, t);
-    case 'quarter-pipe':
-      return quarterPipe(ctx, prop, t);
-    case 'stair-rail':
-      return stairRail(ctx, prop, t);
     case 'bunting-pole':
       return buntingPole(ctx, prop);
     case 'billboard':

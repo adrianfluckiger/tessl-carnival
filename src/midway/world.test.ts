@@ -12,21 +12,10 @@ import {
   isBlocked,
   layoutMidway,
   pathToBooth,
-  QUARTER_AIR,
-  QUARTER_PIPE,
-  QUARTER_RIDE,
-  QUARTER_TURN,
-  quarterPipeHeight,
-  quarterSkaterAt,
-  RAIL_TIMES,
-  railHeight,
-  railSkaterAt,
   seededRandom,
   SKATE_AIR,
   SKATE_RIDE,
   skaterAt,
-  STAIR_SET,
-  stairSlopeHeight,
   toScreen,
   toTile,
   updateVisitor,
@@ -121,43 +110,6 @@ describe('layoutMidway', () => {
         other.y < pipe.y + pipe.h &&
         pipe.y < other.y + other.h;
       expect(overlaps).toBe(false);
-    }
-  });
-
-  it('puts the street skating course in the upper left, out of the way', () => {
-    for (const games of [1, 5, 9]) {
-      const map = layoutMidway(Array.from({ length: games }, (_, i) => `game-${i}`));
-      const course = map.props.filter((p) => p.kind === 'quarter-pipe' || p.kind === 'stair-rail');
-      expect(course.map((p) => p.kind).sort()).toEqual(['quarter-pipe', 'stair-rail']);
-      const [quarter, stairs] = ['quarter-pipe', 'stair-rail'].map((kind) =>
-        course.find((p) => p.kind === kind)!,
-      );
-      // The quarter pipe has its back to the left hedge, with the stairs beside it.
-      expect(quarter.x).toBe(1);
-      expect(quarter.w).toBe(QUARTER_PIPE.length);
-      expect(stairs.x).toBeGreaterThanOrEqual(quarter.x + quarter.w);
-      expect(stairs.w).toBe(STAIR_SET.length);
-      // Up and to the left of the middle of the grounds, as they look on screen.
-      const middle = toScreen(map.width / 2, map.height / 2);
-      for (const part of course) {
-        const centre = toScreen(part.x + part.w / 2, part.y + part.h / 2);
-        // A much longer avenue moves the middle down the left side, level with the course.
-        if (games <= 5) {
-          expect(centre.x).toBeLessThan(middle.x);
-          expect(centre.y).toBeLessThan(middle.y);
-        }
-        expect(part.x + part.w).toBeLessThanOrEqual(map.avenueX);
-        expect(isBlocked(map, part.x, part.y)).toBe(true);
-        for (const other of [...map.props, ...map.booths]) {
-          if (other === part) continue;
-          const overlaps =
-            other.x < part.x + part.w &&
-            part.x < other.x + other.w &&
-            other.y < part.y + part.h &&
-            part.y < other.y + other.h;
-          expect(overlaps).toBe(false);
-        }
-      }
     }
   });
 
@@ -344,123 +296,6 @@ describe('the halfpipe skater', () => {
     for (let t = 0.01; t < cycle * 2; t += 0.01) {
       const pose = skaterAt(t);
       expect(Math.abs(pose.u - last.u)).toBeLessThan(0.1);
-      expect(Math.abs(pose.z - last.z)).toBeLessThan(2);
-      last = pose;
-    }
-  });
-});
-
-describe('the quarter pipe skater', () => {
-  const { length, deck, height, air } = QUARTER_PIPE;
-  const cycle = 2 * QUARTER_RIDE + QUARTER_AIR + QUARTER_TURN;
-
-  it('shapes the pipe with a deck at the back, a ramp and a flat run out', () => {
-    expect(quarterPipeHeight(0)).toBe(height);
-    expect(quarterPipeHeight(deck)).toBe(height);
-    expect(quarterPipeHeight(deck + 0.3)).toBeGreaterThan(quarterPipeHeight(deck + 0.6));
-    expect(quarterPipeHeight(length)).toBe(0);
-  });
-
-  it('rides up the ramp to the lip on the surface', () => {
-    for (let t = 0; t < QUARTER_RIDE; t += 0.1) {
-      const pose = quarterSkaterAt(t);
-      expect(pose.trick).toBeUndefined();
-      expect(pose.dir).toBe(-1);
-      expect(pose.u).toBeGreaterThan(deck);
-      expect(pose.u).toBeLessThan(length);
-      expect(pose.z).toBeCloseTo(quarterPipeHeight(pose.u));
-    }
-  });
-
-  it('does a kickflip 180 above the lip, turning round to ride back down', () => {
-    const pose = quarterSkaterAt(QUARTER_RIDE + QUARTER_AIR / 2);
-    expect(pose.trick).toBe('kickflip-180');
-    expect(pose.u).toBeLessThan(deck + 0.1);
-    expect(pose.z).toBeCloseTo(height + air);
-    expect(quarterSkaterAt(QUARTER_RIDE + 0.1).dir).toBe(-1);
-    expect(quarterSkaterAt(QUARTER_RIDE + QUARTER_AIR - 0.1).dir).toBe(1);
-    expect(quarterSkaterAt(QUARTER_RIDE + QUARTER_AIR + 0.1).dir).toBe(1);
-  });
-
-  it('kick turns at the end of the run out to face the ramp again', () => {
-    expect(quarterSkaterAt(cycle - QUARTER_TURN + 0.1).dir).toBe(1);
-    expect(quarterSkaterAt(cycle - 0.05).dir).toBe(-1);
-    expect(quarterSkaterAt(cycle - 0.05).z).toBe(0);
-  });
-
-  it('moves smoothly round the whole run, over and over', () => {
-    let last = quarterSkaterAt(0);
-    for (let t = 0.01; t < cycle * 2; t += 0.01) {
-      const pose = quarterSkaterAt(t);
-      expect(Math.abs(pose.u - last.u)).toBeLessThan(0.1);
-      expect(Math.abs(pose.z - last.z)).toBeLessThan(2);
-      last = pose;
-    }
-  });
-});
-
-describe('the stair set skater', () => {
-  const { deck, stairs, railY, bankY, height, rail } = STAIR_SET;
-  const times = RAIL_TIMES;
-  const cycle = Object.values(times).reduce((a, b) => a + b, 0);
-  const sliding = times.approach + times.flip;
-
-  it('slopes the stairs and the bank down from the deck to the ground', () => {
-    expect(stairSlopeHeight(0)).toBe(height);
-    expect(stairSlopeHeight(deck)).toBe(height);
-    expect(stairSlopeHeight(deck + stairs / 2)).toBeCloseTo(height / 2);
-    expect(stairSlopeHeight(deck + stairs)).toBe(0);
-    expect(railHeight(deck + stairs)).toBe(rail);
-  });
-
-  it('360 flips off the deck onto the handrail', () => {
-    const start = railSkaterAt(times.approach);
-    expect(start.z).toBe(height);
-    expect(start.u).toBeLessThan(deck);
-    const pose = railSkaterAt(times.approach + times.flip / 2);
-    expect(pose.trick).toBe('360-flip');
-    expect(pose.z).toBeGreaterThan(railHeight(pose.u));
-  });
-
-  it('clears the handrail all the way onto it, from its front end', () => {
-    for (let t = times.approach; t < sliding; t += 0.01) {
-      const pose = railSkaterAt(t);
-      // The handrail is drawn from just short of the deck's edge, at its top height there.
-      if (pose.u < deck - 0.1) continue;
-      expect(pose.z).toBeGreaterThanOrEqual(railHeight(Math.max(pose.u, deck)) - 0.5);
-    }
-  });
-
-  it('tailslides down the handrail', () => {
-    for (let t = sliding; t < sliding + times.slide; t += 0.1) {
-      const pose = railSkaterAt(t);
-      expect(pose.trick).toBe('tailslide');
-      expect(pose.v).toBe(railY);
-      expect(pose.u).toBeGreaterThan(deck);
-      expect(pose.u).toBeLessThan(deck + stairs);
-      expect(pose.z).toBeCloseTo(railHeight(pose.u));
-      expect(pose.dir).toBe(1);
-    }
-    expect(railSkaterAt(sliding + times.slide * 0.9).z).toBeLessThan(railSkaterAt(sliding + 0.1).z);
-  });
-
-  it('rides back up the bank to the deck', () => {
-    const start = sliding + times.slide + times.hop + times.bottomTurn;
-    for (let t = start; t < start + times.bank; t += 0.1) {
-      const pose = railSkaterAt(t);
-      expect(pose.trick).toBeUndefined();
-      expect(pose.v).toBe(bankY);
-      expect(pose.dir).toBe(-1);
-      expect(pose.z).toBeCloseTo(stairSlopeHeight(pose.u));
-    }
-  });
-
-  it('moves smoothly round the whole run, over and over', () => {
-    let last = railSkaterAt(0);
-    for (let t = 0.01; t < cycle * 2; t += 0.01) {
-      const pose = railSkaterAt(t);
-      expect(Math.abs(pose.u - last.u)).toBeLessThan(0.1);
-      expect(Math.abs(pose.v - last.v)).toBeLessThan(0.1);
       expect(Math.abs(pose.z - last.z)).toBeLessThan(2);
       last = pose;
     }
