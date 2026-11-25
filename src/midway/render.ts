@@ -1261,9 +1261,10 @@ const HALFPIPE_SKATER: SkaterLook = {
 /**
  * The skater, drawn upright with their feet at (0, 0). `board` is the ramp's
  * direction in this frame, so the board lies along it. In a boardslide it
- * points across the rail, and the rail runs under the board's middle.
+ * points across the rail, the rail runs under the board's middle, and `rail`
+ * is the way the rail runs downhill in this frame.
  */
-function skater(ctx: Ctx, pose: SkaterPose, board: Pt, look = HALFPIPE_SKATER) {
+function skater(ctx: Ctx, pose: SkaterPose, board: Pt, look = HALFPIPE_SKATER, rail?: Pt) {
   const s = pose.progress;
   const flipping = pose.trick === '360-flip' || pose.trick === 'kickflip-180';
   const flip = flipping ? s : 0;
@@ -1292,20 +1293,13 @@ function skater(ctx: Ctx, pose: SkaterPose, board: Pt, look = HALFPIPE_SKATER) {
   const axisY = lerp(board[1], 1, christ);
   const length = Math.hypot(axisX, axisY);
   skateboard(ctx, centre, [axisX / length, axisY / length], Math.PI * 2 * flip, spin);
-  if (sliding) {
+  if (sliding && rail) {
     // Sparks off the board's middle where it grinds the rail, trailing back up it.
     for (let i = 0; i < 3; i++) {
       const flicker = Math.sin(s * 47 + i * 2.1);
       if (flicker < 0) continue;
       const back = 2 + 3 * i * flicker;
-      oval(
-        ctx,
-        centre[0] + board[1] * back,
-        centre[1] - board[0] * back - i,
-        0.9,
-        0.9,
-        palette.gold,
-      );
+      oval(ctx, centre[0] - rail[0] * back, centre[1] - rail[1] * back - i, 0.9, 0.9, palette.gold);
     }
   }
 
@@ -1568,10 +1562,14 @@ function stairRail(ctx: Ctx, prop: Prop, t: number) {
   const dx = 16 * (along - across);
   const dy = 8 * (along + across) - slope * along;
   const run = Math.hypot(dx, dy);
+  // The rail runs the way they ride, down the slope.
+  const downX = 16 * (hx - hy);
+  const downY = 8 * (hx + hy) - slope * hx;
+  const downRun = Math.hypot(downX, downY);
   const feet = at(u, v, pose.z);
   ctx.save();
   ctx.translate(feet[0], feet[1]);
-  skater(ctx, pose, [dx / run, dy / run], RAIL_SKATER);
+  skater(ctx, pose, [dx / run, dy / run], RAIL_SKATER, [downX / downRun, downY / downRun]);
   ctx.restore();
 }
 
