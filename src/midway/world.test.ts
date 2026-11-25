@@ -41,10 +41,23 @@ describe('layoutMidway', () => {
     expect(open[0].y).toBeGreaterThan(open[2].y);
   });
 
-  it('fills spare slots with coming-soon booths', () => {
-    const map = layoutMidway(['water-cannon']);
-    expect(map.booths).toHaveLength(4);
-    expect(map.booths.filter((b) => !b.gameId)).toHaveLength(3);
+  it('builds a booth only for each game, with no empty booths', () => {
+    expect(layoutMidway(['water-cannon']).booths).toHaveLength(1);
+    expect(layoutMidway([]).booths).toHaveLength(0);
+  });
+
+  it('leaves the ground across the avenue from the skating course open', () => {
+    const map = layoutMidway([]);
+    const course = map.props.filter((p) => p.kind === 'quarter-pipe' || p.kind === 'stair-rail');
+    const top = Math.min(...course.map((p) => p.y));
+    const bottom = Math.max(...course.map((p) => p.y + p.h));
+    const right = Math.max(...course.map((p) => p.x + p.w));
+    for (const prop of map.props) {
+      if (prop.kind === 'bunting-pole' || prop.kind === 'billboard') continue;
+      const level = prop.y < bottom && top < prop.y + prop.h;
+      expect(level && prop.x >= right, `${prop.kind} at ${prop.x},${prop.y}`).toBe(false);
+    }
+    expect(map.props.some((p) => p.kind === 'cart' && p.y < bottom)).toBe(false);
   });
 
   it('grows the avenue as games are added', () => {
@@ -62,24 +75,6 @@ describe('layoutMidway', () => {
     expect(isBlocked(map, 0, 5)).toBe(true);
     expect(isBlocked(map, map.width - 1, 5)).toBe(true);
     expect(isBlocked(map, -1, 0)).toBe(true);
-  });
-
-  it('puts the four juggling clowns in front of the tent, out of the way', () => {
-    const map = layoutMidway(['water-cannon']);
-    const jugglers = map.props.filter((p) => p.kind === 'jugglers');
-    expect(jugglers).toHaveLength(1);
-    const ring = jugglers[0];
-    expect(isBlocked(map, ring.x, ring.y)).toBe(true);
-    expect(map.ground[ring.y * map.width + ring.x]).toBe('grass');
-    for (const other of [...map.props, ...map.booths]) {
-      if (other === ring) continue;
-      const overlaps =
-        other.x < ring.x + ring.w &&
-        ring.x < other.x + other.w &&
-        other.y < ring.y + ring.h &&
-        ring.y < other.y + other.h;
-      expect(overlaps).toBe(false);
-    }
   });
 
   it('puts the clown posse on the grass by the crossroads in front of the gate', () => {

@@ -99,8 +99,8 @@ export function seededRandom(seed: number): () => number {
 /**
  * Lays out the midway for a list of games. Booths line both sides of the
  * avenue, two per row starting by the gate, and the avenue grows as games are
- * added. Slots without a game become "coming soon" booths. Tents, rides and
- * carts fill the space around them.
+ * added. Slots without a game stay open ground. Tents, rides and carts fill
+ * the space around them.
  */
 export function layoutMidway(gameIds: readonly string[]): MidwayMap {
   const rows = Math.max(MIN_ROWS, Math.ceil(gameIds.length / 2));
@@ -152,7 +152,7 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
   add('balloons', 18, 5);
 
   const booths: BoothSlot[] = [];
-  for (let index = 0; index < rows * 2; index++) {
+  for (let index = 0; index < gameIds.length; index++) {
     const row = Math.floor(index / 2);
     const booth: BoothSlot = {
       index,
@@ -182,22 +182,15 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
     }
   }
 
-  // Beside the booths: a street skating course on the left, a tent and carts
-  // on the right.
+  // Beside the booths: a street skating course on the left.
   const side = FIRST_ROW_Y;
-  // A billboard for AI DevCon, rising above the peaked tent on the right.
+  // A billboard for AI DevCon, on the right.
   add('billboard', 19, side - 1, 3, 1);
   // A quarter pipe against the left hedge, facing the midway, and a stair set
   // with a handrail down the middle beside it.
   add('quarter-pipe', 1, side, QUARTER_PIPE.length, 6);
   add('stair-rail', 4, side - 1, STAIR_SET.length, STAIR_SET.width);
   add('planter', 6, side + 5);
-  add('peaked-tent', 18, side, 4, 3, 1);
-  add('cart', 17, side + 4, 1, 1, 1);
-  add('cart', 21, side + 4, 1, 1, 2);
-  add('bench', 19, side + 5);
-  // Four clowns juggling in a ring in front of the tent.
-  add('jugglers', 19, side + 3, 2, 2);
   // Each extra row of booths gets a little more scenery beside it.
   for (let band = 2; band < rows; band++) {
     const y = side + band * ROW_SPACING;
