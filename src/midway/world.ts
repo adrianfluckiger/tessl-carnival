@@ -158,9 +158,7 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
     block({ x, y, w, h });
   };
 
-  // Along the back: the big top at the head of the avenue, with a tent beside it.
-  add('big-top', AVENUE_X - 1, 1, 4, 4);
-  add('peaked-tent', 15, 1, 4, 3, 0);
+  // Along the back, the ground at the head of the avenue stays open.
   // A skateboard halfpipe in the back right corner, running along x.
   add('halfpipe', 19, 1, HALFPIPE.length, 4);
   add('planter', 5, 5);
