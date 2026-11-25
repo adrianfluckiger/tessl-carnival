@@ -71,7 +71,10 @@ DeepMind, Meta, Netlify, Thoughtworks and Docker.
 
 The carnival is a small browser game. It ships with one game, the **water
 cannon**, and a midway you walk around: a sunny fairground with tents, rides and
-a booth for every game. Empty booths say "coming soon" until a game fills them.
+a booth for every game on the map. For now the water cannon, hook-a-duck, ring
+toss and whack-a-mole are off the map, to clear the avenue across from the
+street skating course: they have no booth, and `#/play/<game-id>` still opens
+each one.
 
 You grow your carnival by adding games through your factory. Each game lives in
 its own folder, and the midway finds it there, so a new game touches no shared
@@ -85,9 +88,10 @@ session with a different carnival.
    **Set up my fork**. It turns on what the carnival needs, locks your fork
    down, deploys the carnival, and prints your Pages link.
 3. **Play** at your Pages link,
-   `https://<your-username>.github.io/tessl-carnival/`. Walk up to the water
-   cannon booth and press **E**. Walk with WASD or the arrow keys, or click
-   where you want to go.
+   `https://<your-username>.github.io/tessl-carnival/`. Walk with WASD or the
+   arrow keys, or click where you want to go, and press **E** at a booth. The
+   water cannon is off the map for now: add `#/play/water-cannon` to the link
+   to play it.
 
 Every merge to `main` redeploys your carnival, so your factory's work shows up
 at the same link.
@@ -217,7 +221,7 @@ framework and no native dependencies, so `npm ci` is the whole setup.
 
 - `index.html` and `src/main.ts`: the page and the router.
 - `src/midway/`: the walkable midway. Every registered game gets a booth along
-  the avenue.
+  the avenue, except the ones `OFF_THE_MAP` in `src/main.ts` hides for now.
 - `src/carnival/`: the shared base every game uses: the game registry, scores,
   prizes and theme.
 - `src/games/<game-id>/`: one folder per game. The water cannon is the pattern
