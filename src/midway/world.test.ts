@@ -272,7 +272,17 @@ describe('layoutMidway', () => {
     }
   });
 
-  it('keeps the avenue clear from the gate to the big top', () => {
+  it('leaves the back of the grounds open at the head of the avenue', () => {
+    const map = layoutMidway(['water-cannon']);
+    const kinds = map.props.map((prop) => prop.kind);
+    expect(kinds).not.toContain('big-top');
+    expect(kinds).not.toContain('peaked-tent');
+    for (let y = 1; y < 5; y++) {
+      for (let x = map.avenueX - 1; x < 19; x++) expect(isBlocked(map, x, y)).toBe(false);
+    }
+  });
+
+  it('keeps the avenue clear from the gate to the back of the grounds', () => {
     const map = layoutMidway(['water-cannon']);
     for (let y = 6; y < map.height - 1; y++) {
       expect(isBlocked(map, map.avenueX, y)).toBe(false);
