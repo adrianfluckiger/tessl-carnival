@@ -4,6 +4,9 @@
   "dependencies": {
     "tessl-labs/factory-setup": {
       "version": "0.17.0"
+    },
+    "tessl/factory": {
+      "version": "1.2.8"
     }
   },
   "agents": [
