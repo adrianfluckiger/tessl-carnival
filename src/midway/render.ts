@@ -8,11 +8,17 @@ import {
   GRIND_BOX,
   HALFPIPE,
   halfpipeHeight,
+  POOL_AIR,
+  POOL_LANES,
+  POOL_RIDE,
+  poolHeight,
+  poolSkaterAt,
   QUARTER_PIPE,
   quarterPipeHeight,
   quarterSkaterAt,
   railHeight,
   railSkaterAt,
+  SKATE_POOL,
   skaterAt,
   STAIR_SET,
   stairSlopeHeight,
@@ -24,6 +30,7 @@ import {
   type Prop,
   type Rect,
   type SkaterPose,
+  type SkateTrick,
   type Walker,
 } from './world';
 
@@ -1307,18 +1314,34 @@ function skater(ctx: Ctx, pose: SkaterPose, board: Pt, look = HALFPIPE_SKATER, r
         : 0;
   const tuck = Math.sin(Math.PI * air);
   const christ = trick === 'christ-air' ? Math.min(1, 2.2 * Math.sin(Math.PI * s)) : 0;
-  // An indy grab crouches, with the back hand down on the board.
-  const grab = trick === 'indy-grab' ? Math.min(1, 2.2 * Math.sin(Math.PI * s)) : 0;
+  // An indy grab, a McTwist and a method air crouch, with the back hand down
+  // on the board. A method air kicks the board out behind them.
+  const grabbed = trick === 'indy-grab' || trick === 'mctwist' || trick === 'method';
+  const grab = grabbed ? Math.min(1, 2.2 * Math.sin(Math.PI * s)) : 0;
   const sliding = trick === 'boardslide';
   const grinding = trick === '50-50';
   const dir = pose.dir;
+  const method = trick === 'method' ? grab : 0;
+  const kick: Pt = [-dir * 4 * method, -5 * method];
+  ctx.save();
+  if (trick === 'mctwist') {
+    // A McTwist turns upside down and spins a turn and a half round. The
+    // spin squeezes them across, and the last half turn is the one they
+    // make at the top of every air, so they land facing back down the wall.
+    const rodeIn = s < 0.5 ? dir : -dir;
+    const turn = Math.cos(3 * Math.PI * s) * (s < 0.5 ? 1 : -1);
+    ctx.translate(0, -10);
+    ctx.rotate(-rodeIn * Math.PI * 2 * s);
+    ctx.scale(turn, 1);
+    ctx.translate(0, 10);
+  }
   const hip = -9 + 3 * tuck + 4 * grab + (trick ? 0 : 1);
   const shoulder = hip - 8;
   const reach = lerp(0.7, Math.PI / 2, christ);
   const hand = (side: number): Pt => {
     const free: Pt = [side * (3.5 + 7 * Math.sin(reach)), shoulder + 1 + 7 * Math.cos(reach)];
     if (side === dir) return free;
-    return [lerp(free[0], -dir * 2, grab), lerp(free[1], 0, grab)];
+    return [lerp(free[0], -dir * 2 + kick[0], grab), lerp(free[1], kick[1], grab)];
   };
 
   // Under the feet, or popped away from them, or held up in the front hand.
@@ -1326,9 +1349,20 @@ function skater(ctx: Ctx, pose: SkaterPose, board: Pt, look = HALFPIPE_SKATER, r
   // when they turn at the top of the air.
   const under: Pt = [0, 2 + 7 * tuck];
   const held = hand(s < 0.5 ? dir : -dir);
-  let centre: Pt = [lerp(under[0], held[0], christ), lerp(under[1], held[1], christ)];
+  let centre: Pt = [
+    lerp(under[0], held[0], christ) + kick[0],
+    lerp(under[1], held[1], christ) + kick[1],
+  ];
   let axisX = lerp(board[0], 0, christ);
   let axisY = lerp(board[1], 1, christ);
+  if (method) {
+    // The tail comes up behind them.
+    const a = 0.5 * dir * method;
+    [axisX, axisY] = [
+      axisX * Math.cos(a) - axisY * Math.sin(a),
+      axisX * Math.sin(a) + axisY * Math.cos(a),
+    ];
+  }
   if (trick === 'manual') {
     // The nose they ride towards comes up, with the back wheels down.
     const a = -0.4 * dir;
@@ -1366,7 +1400,7 @@ function skater(ctx: Ctx, pose: SkaterPose, board: Pt, look = HALFPIPE_SKATER, r
       [
         [side * 1.4, hip],
         [side * (2.6 + 2 * tuck), (hip - tuck * 2) / 2],
-        [side * feet, 0],
+        [side * feet + kick[0], kick[1]],
       ],
       look.pants,
       2.6,
@@ -1387,6 +1421,7 @@ function skater(ctx: Ctx, pose: SkaterPose, board: Pt, look = HALFPIPE_SKATER, r
   ctx.fill();
   oval(ctx, -1.5 + dir, head + 0.2, 0.6, 0.7, palette.ink);
   oval(ctx, 1.5 + dir, head + 0.2, 0.6, 0.7, palette.ink);
+  ctx.restore();
 }
 
 /**
@@ -1707,6 +1742,96 @@ function grindBox(ctx: Ctx, prop: Prop, t: number) {
     stroke(ctx, [at(x0 + start, y0 + v, height), at(x0 + end, y0 + v, height)], palette.metal, 1.6);
   }
   riders.filter((rider) => !behind(rider)).forEach(ride);
+}
+
+const POOL_SKATERS: readonly { trick: SkateTrick; start: number; look: SkaterLook }[] = [
+  {
+    trick: 'mctwist',
+    start: 0,
+    look: {
+      skin: palette.skins[4],
+      shirt: palette.shirts[0],
+      pants: palette.pants[0],
+      helmet: palette.red,
+    },
+  },
+  {
+    trick: 'method',
+    start: POOL_RIDE + POOL_AIR,
+    look: {
+      skin: palette.skins[2],
+      shirt: palette.shirts[2],
+      pants: palette.pants[2],
+      helmet: palette.gold,
+    },
+  },
+];
+
+/**
+ * A concrete skate pool sunk into a deck, with metal coping round its edge
+ * and a band of blue tile under it, and two skaters in helmets riding it: one
+ * doing McTwists above the walls at either end and one doing method airs.
+ */
+function skatePool(ctx: Ctx, prop: Prop, t: number) {
+  const { length, width, rim } = SKATE_POOL;
+  const x0 = prop.x + rim;
+  const x1 = x0 + length;
+  const far = prop.y + rim;
+  const near = far + width;
+  // The deck, sunk into the grass like the concrete under the other courses.
+  poly(ctx, rectPoints(prop, 3), palette.grassEdge);
+  poly(ctx, rectPoints(prop), palette.pad);
+
+  // Everything inside the bowl, or above it, is hidden below the near edges
+  // of the coping.
+  const corner = at(x0, near);
+  const end = at(x1, far);
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(...corner);
+  ctx.lineTo(...at(x1, near));
+  ctx.lineTo(...end);
+  ctx.lineTo(end[0], end[1] - 200);
+  ctx.lineTo(corner[0], corner[1] - 200);
+  ctx.closePath();
+  ctx.clip();
+
+  // The far side wall, then the floor and the walls at either end.
+  const steps = 32;
+  const wall: Pt[] = [];
+  for (let i = 0; i <= steps; i++)
+    wall.push(at(x0 + (i / steps) * length, far, poolHeight((i / steps) * length)));
+  poly(ctx, [at(x0, far), at(x1, far), ...wall.reverse()], palette.concreteShade);
+  for (let i = 0; i < steps; i++) {
+    const u0 = (i / steps) * length;
+    const u1 = ((i + 1) / steps) * length;
+    const z0 = poolHeight(u0);
+    const z1 = poolHeight(u1);
+    const color =
+      z1 < z0 ? palette.concreteLight : z1 > z0 ? palette.concreteShade : palette.concrete;
+    poly(
+      ctx,
+      [at(x0 + u0, far, z0), at(x0 + u1, far, z1), at(x0 + u1, near, z1), at(x0 + u0, near, z0)],
+      color,
+    );
+  }
+  stroke(ctx, [at(x0, far, -3), at(x1, far, -3)], palette.blue, 3);
+  stroke(ctx, [at(x0 + 0.05, far, -3), at(x0 + 0.05, near, -3)], palette.blue, 3);
+  for (const edge of [
+    [at(x0, near), at(x0, far), at(x1, far)],
+    [at(x0, near), at(x1, near), at(x1, far)],
+  ]) {
+    stroke(ctx, edge, palette.metal, 1.6);
+  }
+
+  for (const [lane, rider] of POOL_SKATERS.entries()) {
+    const pose = poolSkaterAt(t + rider.start, rider.trick);
+    const v = far + POOL_LANES[lane];
+    const ground = at(x0 + pose.u, v, poolHeight(pose.u));
+    oval(ctx, ground[0], ground[1], 5, 2, palette.shadow);
+    rideRamp(ctx, at(x0 + pose.u, v, pose.z), pose, poolHeight, rider.look);
+  }
+  ctx.restore();
 }
 
 /** How high the stair set's surface is under a point on it, in pixels. */
@@ -2105,6 +2230,7 @@ const PROP_HEIGHTS: Record<Prop['kind'], number> = {
   'quarter-pipe': QUARTER_PIPE.height + QUARTER_PIPE.air + 40,
   'stair-rail': STAIR_SET.height + STAIR_SET.rail + STAIR_SET.air + 40,
   'grind-box': GRIND_BOX.height + GRIND_BOX.air + 40,
+  'skate-pool': SKATE_POOL.air + 40,
   'bunting-pole': 0,
   billboard: BILLBOARD_HEIGHT + 40,
 };
@@ -2315,6 +2441,8 @@ export function drawProp(ctx: Ctx, prop: Prop, t: number) {
       return stairRail(ctx, prop, t);
     case 'grind-box':
       return grindBox(ctx, prop, t);
+    case 'skate-pool':
+      return skatePool(ctx, prop, t);
     case 'bunting-pole':
       return buntingPole(ctx, prop);
     case 'billboard':
