@@ -73,7 +73,7 @@ describe('layoutMidway', () => {
     const bottom = Math.max(...course.map((p) => p.y + p.h));
     const right = Math.max(...course.map((p) => p.x + p.w));
     for (const prop of map.props) {
-      if (['bunting-pole', 'billboard', 'skate-pool'].includes(prop.kind)) continue;
+      if (['billboard', 'skate-pool'].includes(prop.kind)) continue;
       const level = prop.y < bottom && top < prop.y + prop.h;
       expect(level && prop.x >= right, `${prop.kind} at ${prop.x},${prop.y}`).toBe(false);
     }
@@ -143,7 +143,7 @@ describe('layoutMidway', () => {
 
   it('puts the halfpipe in the back right corner, out of the way', () => {
     const map = layoutMidway(['water-cannon']);
-    const pipes = map.props.filter((p) => p.kind === 'halfpipe');
+    const pipes = map.props.filter((p) => p.kind === 'halfpipe' && p.variant === 0);
     expect(pipes).toHaveLength(1);
     const pipe = pipes[0];
     // Against the back hedge and the right hedge.
@@ -245,6 +245,34 @@ describe('layoutMidway', () => {
     }
   });
 
+  it('puts a second halfpipe by the gate, where the carousel used to be', () => {
+    for (const count of [1, 4, 9]) {
+      const map = layoutMidway(Array.from({ length: count }, (_, i) => `game-${i}`));
+      const pipes = map.props.filter((p) => p.kind === 'halfpipe' && p.variant === 1);
+      expect(pipes).toHaveLength(1);
+      const pipe = pipes[0];
+      // Bottom right, near the entrance, the same size as the one in the corner.
+      expect(pipe.x).toBe(17);
+      expect(pipe.y + pipe.h).toBeGreaterThan(map.height - 6);
+      expect(pipe.w).toBe(HALFPIPE.length);
+      expect(isBlocked(map, pipe.x, pipe.y)).toBe(true);
+      for (const other of [...map.props, ...map.booths]) {
+        if (other === pipe) continue;
+        const overlaps =
+          other.x < pipe.x + pipe.w &&
+          pipe.x < other.x + other.w &&
+          other.y < pipe.y + pipe.h &&
+          pipe.y < other.y + other.h;
+        expect(overlaps, `${'kind' in other ? other.kind : 'booth'}`).toBe(false);
+      }
+    }
+  });
+
+  it('has no carousel any more', () => {
+    const map = layoutMidway(['water-cannon']);
+    expect(map.props.some((p) => (p.kind as string) === 'carousel')).toBe(false);
+  });
+
   it('puts the skate pool in front of the AI DevCon billboard', () => {
     for (const games of [0, 5, 9]) {
       const map = layoutMidway(Array.from({ length: games }, (_, i) => `game-${i}`));
@@ -298,7 +326,17 @@ describe('layoutMidway', () => {
     }
   });
 
-  it('keeps the avenue clear from the gate to the big top', () => {
+  it('leaves the back of the grounds open at the head of the avenue', () => {
+    const map = layoutMidway(['water-cannon']);
+    const kinds = map.props.map((prop) => prop.kind);
+    expect(kinds).not.toContain('big-top');
+    expect(kinds).not.toContain('peaked-tent');
+    for (let y = 1; y < 5; y++) {
+      for (let x = map.avenueX - 1; x < 19; x++) expect(isBlocked(map, x, y)).toBe(false);
+    }
+  });
+
+  it('keeps the avenue clear from the gate to the back of the grounds', () => {
     const map = layoutMidway(['water-cannon']);
     for (let y = 6; y < map.height - 1; y++) {
       expect(isBlocked(map, map.avenueX, y)).toBe(false);
@@ -456,6 +494,27 @@ describe('the halfpipe skater', () => {
       expect(Math.abs(pose.u - last.u)).toBeLessThan(0.1);
       expect(Math.abs(pose.z - last.z)).toBeLessThan(2);
       last = pose;
+    }
+  });
+});
+
+describe('the halfpipe skaters by the gate', () => {
+  const { length, height, air } = HALFPIPE;
+
+  it('does the tricks they are given above each lip', () => {
+    const right = skaterAt(SKATE_RIDE + SKATE_AIR / 2, ['kickflip', 'indy-grab']);
+    expect(right.trick).toBe('kickflip');
+    expect(right.u).toBeGreaterThan(length / 2);
+    expect(right.z).toBeCloseTo(height + air);
+    const left = skaterAt(2 * SKATE_RIDE + SKATE_AIR + SKATE_AIR / 2, ['method', 'shove-it']);
+    expect(left.trick).toBe('shove-it');
+    expect(left.u).toBeLessThan(length / 2);
+    expect(left.z).toBeCloseTo(height + air);
+  });
+
+  it('rides the same line as the corner skater between tricks', () => {
+    for (let t = 0; t < SKATE_RIDE; t += 0.1) {
+      expect(skaterAt(t, ['method', 'shove-it'])).toEqual(skaterAt(t));
     }
   });
 });
