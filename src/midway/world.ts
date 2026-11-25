@@ -39,7 +39,6 @@ export type PropKind =
   | 'big-top'
   | 'round-tent'
   | 'peaked-tent'
-  | 'ferris-wheel'
   | 'carousel'
   | 'wagon'
   | 'cart'
@@ -142,9 +141,7 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
     block({ x, y, w, h });
   };
 
-  // Along the back: tents and rides round the big top at the head of the avenue.
-  add('round-tent', 1, 1, 4, 4, 0);
-  add('ferris-wheel', 6, 1, 4, 3);
+  // Along the back: the big top at the head of the avenue, with a tent beside it.
   add('big-top', AVENUE_X - 1, 1, 4, 4);
   add('peaked-tent', 15, 1, 4, 3, 0);
   // A skateboard halfpipe in the back right corner, running along x.
