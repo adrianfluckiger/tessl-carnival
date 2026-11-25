@@ -37,7 +37,6 @@ export interface BoothSlot extends Rect {
 
 export type PropKind =
   | 'big-top'
-  | 'round-tent'
   | 'peaked-tent'
   | 'carousel'
   | 'wagon'
@@ -53,6 +52,7 @@ export type PropKind =
   | 'stair-rail'
   | 'grind-box'
   | 'skate-pool'
+  | 'stage'
   | 'bunting-pole'
   | 'billboard';
 
@@ -229,8 +229,8 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
     add('bench', 20, y + 2);
   }
 
-  // By the gate.
-  add('round-tent', 2, entrance, 4, 4, 2);
+  // By the gate: a punk band on a stage, with a crowd rocking out in front.
+  add('stage', 2, entrance, 4, CONCERT_STAGE.depth + CONCERT_STAGE.crowd);
   add('cart', 7, entrance + 1, 1, 1, 3);
   add('ticket-booth', AVENUE_X - 2, height - 2);
   add('carousel', 17, entrance, 4, 4);
@@ -687,6 +687,46 @@ export function poolSkaterAt(t: number, trick: SkateTrick): SkaterPose {
   if (time < POOL_RIDE) return ride(right, left, -1);
   time -= POOL_RIDE;
   return pop(left, time < POOL_AIR / 2 ? -1 : 1);
+}
+
+/**
+ * The concert stage by the gate: a deck `depth` tiles deep and `height` pixels
+ * tall across the back of its spot, facing the gate, with `crowd` tiles of
+ * grass in front of it for the fans.
+ */
+export const CONCERT_STAGE = { depth: 2, crowd: 2, height: 10 };
+
+/** Seconds between beats of the punk band's song. */
+export const PUNK_BEAT = 0.34;
+
+/** How a fan rocks out: jumping with both hands up, banging their head, or pumping a fist. */
+export type RockMove = 'jump' | 'headbang' | 'fist';
+
+export interface RockerPose {
+  /** Pixels off the ground. */
+  z: number;
+  /** How far the head is thrown forward, from 0 to 1. */
+  nod: number;
+  /** How high the hands are, from 0 (hanging down) to 1 (straight up). */
+  hands: number;
+}
+
+/**
+ * How a fan doing `move` stands `t` seconds into the song. Every move lands
+ * on the beat, feet down and head or fist at its hardest; `offset` puts a fan a little ahead of it or
+ * behind it, so the crowd doesn't move as one.
+ */
+export function rockerAt(t: number, move: RockMove, offset = 0): RockerPose {
+  const beats = (t + offset) / PUNK_BEAT;
+  const bounce = Math.sin(Math.PI * (beats - Math.floor(beats)));
+  switch (move) {
+    case 'jump':
+      return { z: 7 * bounce, nod: 0, hands: 0.7 + 0.3 * bounce };
+    case 'headbang':
+      return { z: 0, nod: 1 - bounce, hands: 0.15 };
+    case 'fist':
+      return { z: 1.5 * bounce, nod: 0.3 * (1 - bounce), hands: 1 - 0.6 * bounce };
+  }
 }
 
 function lerpNumber(a: number, b: number, s: number): number {

@@ -6,6 +6,7 @@ import {
   boxSkaterAt,
   boothInReach,
   canStand,
+  CONCERT_STAGE,
   createVisitors,
   createWalker,
   findPath,
@@ -22,6 +23,7 @@ import {
   POOL_RIDE,
   poolHeight,
   poolSkaterAt,
+  PUNK_BEAT,
   QUARTER_AIR,
   QUARTER_PIPE,
   QUARTER_RIDE,
@@ -31,6 +33,7 @@ import {
   RAIL_TIMES,
   railHeight,
   railSkaterAt,
+  rockerAt,
   seededRandom,
   strollTiles,
   SKATE_AIR,
@@ -111,6 +114,29 @@ describe('layoutMidway', () => {
         spot.x < other.x + other.w &&
         other.y < spot.y + spot.h &&
         spot.y < other.y + other.h;
+      expect(overlaps).toBe(false);
+    }
+  });
+
+  it('puts the concert stage by the gate, where the round tent stood', () => {
+    const map = layoutMidway(['water-cannon']);
+    expect(map.props.some((p) => (p.kind as string) === 'round-tent')).toBe(false);
+    const stages = map.props.filter((p) => p.kind === 'stage');
+    expect(stages).toHaveLength(1);
+    const stage = stages[0];
+    // Bottom left, just south of the cross path in front of the gate.
+    expect(stage.x).toBe(2);
+    expect(map.ground[(stage.y - 1) * map.width + stage.x]).toBe('path');
+    expect(stage.y + stage.h).toBeLessThan(map.height - 1);
+    expect(stage.h).toBe(CONCERT_STAGE.depth + CONCERT_STAGE.crowd);
+    expect(isBlocked(map, stage.x, stage.y + stage.h - 1)).toBe(true);
+    for (const other of [...map.props, ...map.booths]) {
+      if (other === stage) continue;
+      const overlaps =
+        other.x < stage.x + stage.w &&
+        stage.x < other.x + other.w &&
+        other.y < stage.y + stage.h &&
+        stage.y < other.y + other.h;
       expect(overlaps).toBe(false);
     }
   });
@@ -721,6 +747,46 @@ describe('the skate pool skaters', () => {
       expect(Math.abs(pose.u - last.u)).toBeLessThan(0.1);
       expect(Math.abs(pose.z - last.z)).toBeLessThan(2);
       last = pose;
+    }
+  });
+});
+
+describe('the crowd at the concert stage', () => {
+  it('lands every move on the beat', () => {
+    for (const beat of [0, 1, 5]) {
+      const t = beat * PUNK_BEAT;
+      expect(rockerAt(t, 'jump').z).toBeCloseTo(0);
+      expect(rockerAt(t, 'headbang').nod).toBeCloseTo(1);
+      expect(rockerAt(t, 'fist').hands).toBeCloseTo(1);
+    }
+  });
+
+  it('jumps with their hands up between beats', () => {
+    const pose = rockerAt(PUNK_BEAT / 2, 'jump');
+    expect(pose.z).toBeGreaterThan(5);
+    expect(pose.hands).toBeCloseTo(1);
+    expect(rockerAt(PUNK_BEAT / 2, 'headbang').nod).toBeCloseTo(0);
+  });
+
+  it('lets a fan move a little off the beat', () => {
+    expect(rockerAt(0, 'jump', PUNK_BEAT / 2).z).toBeCloseTo(rockerAt(PUNK_BEAT / 2, 'jump').z);
+    expect(rockerAt(0, 'jump', 0.1).z).not.toBeCloseTo(rockerAt(0, 'jump').z);
+  });
+
+  it('keeps rocking smoothly, song after song', () => {
+    for (const move of ['jump', 'headbang', 'fist'] as const) {
+      let last = rockerAt(0, move);
+      for (let t = 0.01; t < 10; t += 0.01) {
+        const pose = rockerAt(t, move);
+        expect(pose.z).toBeGreaterThanOrEqual(0);
+        expect(pose.hands).toBeGreaterThanOrEqual(0);
+        expect(pose.hands).toBeLessThanOrEqual(1);
+        expect(pose.nod).toBeGreaterThanOrEqual(0);
+        expect(pose.nod).toBeLessThanOrEqual(1);
+        // Down is sudden on the beat, but never a teleport.
+        expect(Math.abs(pose.z - last.z)).toBeLessThan(1);
+        last = pose;
+      }
     }
   });
 });

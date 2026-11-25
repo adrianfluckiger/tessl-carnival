@@ -5,6 +5,7 @@ import {
   BOX_LINES,
   boxSkaterAt,
   CART_KINDS,
+  CONCERT_STAGE,
   GRIND_BOX,
   HALFPIPE,
   halfpipeHeight,
@@ -13,11 +14,13 @@ import {
   POOL_RIDE,
   poolHeight,
   poolSkaterAt,
+  PUNK_BEAT,
   QUARTER_PIPE,
   quarterPipeHeight,
   quarterSkaterAt,
   railHeight,
   railSkaterAt,
+  rockerAt,
   SKATE_POOL,
   skaterAt,
   STAIR_SET,
@@ -29,6 +32,7 @@ import {
   type Point,
   type Prop,
   type Rect,
+  type RockMove,
   type SkaterPose,
   type SkateTrick,
   type Walker,
@@ -419,19 +423,12 @@ const RED: Stripes = {
   b: palette.cream,
   bShade: palette.creamShade,
 };
-const GOLD: Stripes = {
-  a: palette.gold,
-  aShade: palette.goldShade,
-  b: palette.cream,
-  bShade: palette.creamShade,
-};
 const BLUE: Stripes = {
   a: palette.blue,
   aShade: palette.blueShade,
   b: palette.cream,
   bShade: palette.creamShade,
 };
-const TENT_COLORS = [GOLD, BLUE, BLUE, RED] as const;
 
 function rimPoint(c: Pt, r: number, angle: number, z: number): Pt {
   return [c[0] + Math.cos(angle) * r * ISO_RX, c[1] + Math.sin(angle) * r * ISO_RY - z];
@@ -834,11 +831,25 @@ function person(
   x: number,
   y: number,
   look: Look,
-  options: { swing?: number; back?: boolean; dir?: number; player?: boolean; t?: number } = {},
+  options: {
+    swing?: number;
+    back?: boolean;
+    dir?: number;
+    player?: boolean;
+    t?: number;
+    /** Pixels off the ground, leaving the shadow behind. */
+    lift?: number;
+    /** How far the head drops forward, from 0 to 1. */
+    nod?: number;
+    /** How high each hand, left then right, reaches: 0 hanging down, 1 straight up. */
+    reach?: readonly [number, number];
+  } = {},
 ) {
   const swing = options.swing ?? 0;
   const dir = options.dir ?? 1;
+  const [reachLeft, reachRight] = options.reach ?? [0, 0];
   oval(ctx, x, y, 5, 2, palette.shadow);
+  y -= options.lift ?? 0;
   if (options.player) {
     ctx.strokeStyle = palette.gold;
     ctx.lineWidth = 1.5;
@@ -872,7 +883,7 @@ function person(
     ctx,
     [
       [x - 4, y - 15],
-      [x - 5 - swing, y - 9],
+      [lerp(x - 5 - swing, x - 6, reachLeft), lerp(y - 9, y - 27, reachLeft)],
     ],
     look.skin,
     2,
@@ -881,34 +892,35 @@ function person(
     ctx,
     [
       [x + 4, y - 15],
-      [x + 5 + swing, y - 9],
+      [lerp(x + 5 + swing, x + 6, reachRight), lerp(y - 9, y - 27, reachRight)],
     ],
     look.skin,
     2,
   );
-  oval(ctx, x, y - 20.5, 4, 4, look.skin);
+  const head = y + (options.nod ?? 0) * 2.5;
+  oval(ctx, x, head - 20.5, 4, 4, look.skin);
   ctx.fillStyle = look.hair;
   ctx.beginPath();
-  if (options.back) ctx.arc(x, y - 20.8, 4.2, 0, Math.PI * 2);
-  else ctx.arc(x, y - 21, 4.2, Math.PI * 1.05, Math.PI * 1.95);
+  if (options.back) ctx.arc(x, head - 20.8, 4.2, 0, Math.PI * 2);
+  else ctx.arc(x, head - 21, 4.2, Math.PI * 1.05, Math.PI * 1.95);
   ctx.fill();
   if (!options.back) {
-    oval(ctx, x - 1.5 + dir, y - 20.3, 0.6, 0.7, palette.ink);
-    oval(ctx, x + 1.5 + dir, y - 20.3, 0.6, 0.7, palette.ink);
+    oval(ctx, x - 1.5 + dir, head - 20.3, 0.6, 0.7, palette.ink);
+    oval(ctx, x + 1.5 + dir, head - 20.3, 0.6, 0.7, palette.ink);
   }
   if (look.cap) {
     ctx.fillStyle = look.cap;
     ctx.beginPath();
-    ctx.arc(x, y - 22, 4.4, Math.PI, Math.PI * 2);
+    ctx.arc(x, head - 22, 4.4, Math.PI, Math.PI * 2);
     ctx.fill();
     if (!options.back)
       poly(
         ctx,
         [
-          [x, y - 22.5],
-          [x + dir * 7, y - 22.5],
-          [x + dir * 7, y - 21.3],
-          [x, y - 21.3],
+          [x, head - 22.5],
+          [x + dir * 7, head - 22.5],
+          [x + dir * 7, head - 21.3],
+          [x, head - 21.3],
         ],
         look.cap,
       );
@@ -1245,6 +1257,254 @@ function posse(ctx: Ctx, prop: Prop, t: number) {
       0.9,
     );
   });
+}
+
+/** A punk's mohawk: a row of spikes along the top of a head whose crown is at (x, top). */
+function mohawk(ctx: Ctx, x: number, top: number, color: string) {
+  for (const dx of [-2.4, 0, 2.4]) {
+    poly(
+      ctx,
+      [
+        [x + dx - 1.4, top + 1.5],
+        [x + dx + 1.4, top + 1.5],
+        [x + dx * 1.3, top - 4],
+      ],
+      color,
+    );
+  }
+}
+
+/** A guitar slung across someone standing at (x, y), with their strumming hand. */
+function guitar(ctx: Ctx, x: number, y: number, color: string, strum: number, skin: string) {
+  stroke(
+    ctx,
+    [
+      [x + 1, y - 10.5],
+      [x - 7, y - 17],
+    ],
+    palette.woodDark,
+    1.3,
+  );
+  oval(ctx, x - 7.3, y - 17.3, 1.2, 1.2, palette.woodDark);
+  oval(ctx, x + 1.8, y - 10, 3.4, 2.6, color);
+  oval(ctx, x + 1.5, y - 10.3, 0.9, 0.9, palette.ink);
+  oval(ctx, x + 4, y - 11.5 + strum * 2.5, 1.2, 1.2, skin);
+}
+
+/** Where the fans stand in front of the stage, in tiles from the stage spot's back left corner. */
+const FANS: readonly Pt[] = [
+  [0.55, 2.35],
+  [1.3, 2.3],
+  [2.05, 2.4],
+  [2.8, 2.3],
+  [3.5, 2.4],
+  [0.9, 2.95],
+  [1.7, 2.9],
+  [2.45, 3],
+  [3.2, 2.9],
+  [1.3, 3.55],
+  [2.1, 3.5],
+  [2.9, 3.6],
+];
+const FAN_MOVES: readonly RockMove[] = ['jump', 'headbang', 'fist'];
+
+/**
+ * A stage by the gate with a punk band on it, singer, two guitars and drums,
+ * playing under flashing lights, and a crowd in front jumping, banging their
+ * heads and punching the air on the beat.
+ */
+function concertStage(ctx: Ctx, prop: Prop, t: number) {
+  const { depth, height } = CONCERT_STAGE;
+  const x0 = prop.x;
+  const y0 = prop.y;
+  const beats = t / PUNK_BEAT;
+  const beat = Math.floor(beats);
+  const bounce = Math.sin(Math.PI * (beats - beat));
+  const deck = (x: number, y: number) => at(x0 + x, y0 + y, height);
+
+  // A patch of grass the crowd has trampled flat.
+  poly(
+    ctx,
+    rectPoints({ x: x0 + 0.15, y: y0 + depth, w: prop.w - 0.3, h: prop.h - depth - 0.1 }),
+    palette.grassDark,
+  );
+
+  // The backdrop, with the lights along its top and a banner across it.
+  const back = y0 + 0.15;
+  const top = height + 40;
+  poly(
+    ctx,
+    [
+      at(x0 + 0.1, back, height),
+      at(x0 + 3.9, back, height),
+      at(x0 + 3.9, back, top),
+      at(x0 + 0.1, back, top),
+    ],
+    palette.ink,
+  );
+  onPlane(ctx, at(x0 + 2, back, height + 28), () =>
+    signBoard(ctx, 'PUNK ROCK', 64, 14, {
+      board: palette.ink,
+      edge: palette.red,
+      text: palette.pink,
+    }),
+  );
+  box(
+    ctx,
+    x0 + 0.1,
+    y0 + 0.1,
+    3.8,
+    depth - 0.2,
+    0,
+    height,
+    palette.board,
+    palette.wood,
+    palette.woodDark,
+  );
+  for (let i = 0; i < 4; i++) {
+    const lamp = at(x0 + 0.6 + i * 0.93, back, top);
+    const color = palette.balloons[i % palette.balloons.length];
+    const lit = (beat + i) % 2 === 0;
+    if (lit) {
+      const spot = deck(0.6 + ((i + 1) % 4) * 0.93, 1.3);
+      ctx.globalAlpha = 0.22;
+      poly(
+        ctx,
+        [
+          [lamp[0] - 1.5, lamp[1]],
+          [lamp[0] + 1.5, lamp[1]],
+          [spot[0] + 9, spot[1]],
+          [spot[0] - 9, spot[1]],
+        ],
+        color,
+      );
+      ctx.globalAlpha = 1;
+    }
+    oval(ctx, lamp[0], lamp[1], 2.4, 2, lit ? color : palette.metalShade);
+  }
+
+  // The drummer, sitting behind the kit at the back of the stage.
+  const [dx, dy] = deck(2, 0.6);
+  // Sticks come down on the toms on the beat, left and right in turn.
+  const hit = beat % 2 === 0 ? bounce : 0;
+  const drummer: Look = {
+    skin: palette.skins[1],
+    hair: palette.hairs[1],
+    shirt: palette.red,
+    pants: palette.pants[1],
+  };
+  person(ctx, dx, dy, drummer, { reach: [0.05 + 0.4 * hit, 0.05 + 0.4 * (bounce - hit)] });
+  mohawk(ctx, dx, dy - 24.5, palette.gold);
+  oval(ctx, dx - 6, dy - 10, 3.2, 1.6, palette.metal);
+  oval(ctx, dx + 6, dy - 10, 3.2, 1.6, palette.metal);
+  stroke(
+    ctx,
+    [
+      [dx + 6, dy - 16 - hit],
+      [dx + 12, dy - 14 - hit],
+    ],
+    hit > 0.5 ? palette.gold : palette.goldShade,
+    1.4,
+  );
+  oval(ctx, dx, dy - 5, 6.2, 6.2, palette.red);
+  oval(ctx, dx, dy - 5, 5, 5, palette.cream);
+  oval(ctx, dx, dy - 5, 1.6, 1.6, palette.red);
+
+  // A speaker stack at each front corner, the guitarist and the bassist
+  // banging their heads, and the singer jumping out front.
+  const speaker = (x: number) => {
+    box(
+      ctx,
+      x0 + x,
+      y0 + depth - 0.6,
+      0.45,
+      0.4,
+      height,
+      18,
+      palette.ink,
+      palette.ink,
+      palette.ink,
+    );
+    const cone = deck(x + 0.2, depth - 0.2);
+    oval(ctx, cone[0], cone[1] - 5, 2.2 + bounce * 0.4, 2.2 + bounce * 0.4, palette.metalShade);
+    oval(ctx, cone[0], cone[1] - 13, 2.2 + bounce * 0.4, 2.2 + bounce * 0.4, palette.metalShade);
+  };
+  speaker(0.15);
+  const players = [
+    {
+      at: deck(0.9, 1.3),
+      look: {
+        skin: palette.skins[0],
+        hair: palette.hairs[0],
+        shirt: palette.ink,
+        pants: palette.pants[0],
+      },
+      hair: palette.pink,
+      axe: palette.red,
+      offset: 0,
+    },
+    {
+      at: deck(3.1, 1.3),
+      look: {
+        skin: palette.skins[2],
+        hair: palette.hairs[3],
+        shirt: palette.ink,
+        pants: palette.pants[2],
+      },
+      hair: palette.blue,
+      axe: palette.blue,
+      offset: PUNK_BEAT / 2,
+    },
+  ];
+  for (const player of players) {
+    const [px, py] = player.at;
+    const { nod } = rockerAt(t, 'headbang', player.offset);
+    person(ctx, px, py, player.look, { nod, swing: bounce - 0.5 });
+    mohawk(ctx, px, py - 24.5 + nod * 2.5, player.hair);
+    guitar(ctx, px, py, player.axe, bounce, player.look.skin);
+  }
+  const [sx, sy] = deck(2, 1.6);
+  const jump = beat % 2 === 0 ? 5 * bounce : 0;
+  const singer: Look = {
+    skin: palette.skins[4],
+    hair: palette.hairs[3],
+    shirt: palette.red,
+    pants: palette.ink,
+  };
+  person(ctx, sx, sy, singer, { lift: jump, reach: [0.75, 0.25 + 0.5 * bounce], swing: 0.6 });
+  mohawk(ctx, sx, sy - jump - 24.5, palette.red);
+  oval(
+    ctx,
+    lerp(sx - 5, sx - 6, 0.75),
+    lerp(sy - jump - 9, sy - jump - 27, 0.75) + 1,
+    1.3,
+    1.6,
+    palette.ink,
+  );
+  speaker(3.4);
+
+  // The crowd, facing the stage, back row first.
+  FANS.map(([u, v], i) => ({ i, p: at(x0 + u, y0 + v) }))
+    .sort((a, b) => a.p[1] - b.p[1])
+    .forEach(({ i, p }) => {
+      const pose = rockerAt(t, FAN_MOVES[i % FAN_MOVES.length], (i * 0.07) % 0.15);
+      const look = visitorLook(i * 2 + 1);
+      if (i % 3 === 0) look.shirt = palette.ink;
+      const reach: [number, number] =
+        FAN_MOVES[i % FAN_MOVES.length] === 'fist'
+          ? i % 2
+            ? [pose.hands, 0.1]
+            : [0.1, pose.hands]
+          : [pose.hands, pose.hands];
+      person(ctx, p[0], p[1], look, { back: true, lift: pose.z, nod: pose.nod, reach });
+      if (i % 4 === 1)
+        mohawk(
+          ctx,
+          p[0],
+          p[1] - pose.z - 24.5 + pose.nod * 2.5,
+          palette.balloons[i % palette.balloons.length],
+        );
+    });
 }
 
 /** Screen pixels a tile along x covers, for tilting things that lean on a slope. */
@@ -2215,7 +2475,6 @@ export function boothBounds(slot: BoothSlot): Box {
 
 const PROP_HEIGHTS: Record<Prop['kind'], number> = {
   'big-top': 100,
-  'round-tent': 80,
   'peaked-tent': 56,
   carousel: 86,
   wagon: 38,
@@ -2231,6 +2490,7 @@ const PROP_HEIGHTS: Record<Prop['kind'], number> = {
   'stair-rail': STAIR_SET.height + STAIR_SET.rail + STAIR_SET.air + 40,
   'grind-box': GRIND_BOX.height + GRIND_BOX.air + 40,
   'skate-pool': SKATE_POOL.air + 40,
+  stage: CONCERT_STAGE.height + 70,
   'bunting-pole': 0,
   billboard: BILLBOARD_HEIGHT + 40,
 };
@@ -2399,20 +2659,6 @@ export function drawProp(ctx: Ctx, prop: Prop, t: number) {
   switch (prop.kind) {
     case 'big-top':
       return bigTop(ctx, prop, t);
-    case 'round-tent': {
-      const colors = TENT_COLORS[prop.variant % TENT_COLORS.length];
-      return roundTent(
-        ctx,
-        prop.x + prop.w / 2,
-        prop.y + prop.h / 2,
-        1.55,
-        30,
-        34,
-        colors,
-        t,
-        prop.variant % 2 ? palette.blue : palette.gold,
-      );
-    }
     case 'peaked-tent':
       return peakedTent(ctx, prop, t);
     case 'carousel':
@@ -2443,6 +2689,8 @@ export function drawProp(ctx: Ctx, prop: Prop, t: number) {
       return grindBox(ctx, prop, t);
     case 'skate-pool':
       return skatePool(ctx, prop, t);
+    case 'stage':
+      return concertStage(ctx, prop, t);
     case 'bunting-pole':
       return buntingPole(ctx, prop);
     case 'billboard':
