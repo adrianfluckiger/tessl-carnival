@@ -44,13 +44,10 @@ jobs:
               ;;
           esac
 
-  deploy:
+  build:
     needs: check
     if: needs.check.outputs.enabled == 'true'
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -63,5 +60,16 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+
+  # Deploy in its own job: when it ran straight after the upload in the same
+  # job, deploy-pages sometimes looked before the artifact was listed and
+  # failed with 'No artifacts named "github-pages" were found'.
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
