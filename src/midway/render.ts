@@ -18,7 +18,9 @@ import {
   quarterSkaterAt,
   railHeight,
   railSkaterAt,
+  SKATE_AIR,
   SKATE_POOL,
+  SKATE_RIDE,
   skaterAt,
   STAIR_SET,
   stairSlopeHeight,
@@ -404,7 +406,7 @@ export function drawFrontHedge(ctx: Ctx, map: MidwayMap) {
   hedge(ctx, { x: map.avenueX + 2, y: h, w: map.width - map.avenueX - 3, h: 1 });
 }
 
-// ── Round things: tents, the big top, the carousel ────────────────────────
+// ── Round things: tents and the big top ────────────────────────────────────
 
 interface Stripes {
   a: string;
@@ -581,108 +583,6 @@ function bigTop(ctx: Ctx, prop: Prop, t: number) {
     const p = rimPoint(c, 1.92, angle, 10);
     oval(ctx, p[0], p[1], 1.4, 1.4, Math.sin(t * 4 + i) > 0 ? palette.gold : palette.cream);
   }
-}
-
-function carousel(ctx: Ctx, prop: Prop, t: number) {
-  const cx = prop.x + prop.w / 2;
-  const cy = prop.y + prop.h / 2;
-  const c = at(cx, cy);
-  const turn = t * 0.5;
-  const r = 1.75;
-  oval(ctx, c[0] + 8, c[1] + 4, r * ISO_RX * 1.1, r * ISO_RY * 1.1, palette.shadow);
-  cylinder(ctx, c, r, 0, 6, RED, 24);
-  oval(ctx, c[0], c[1] - 6, r * ISO_RX, r * ISO_RY, palette.pink);
-  oval(ctx, c[0], c[1] - 6, r * ISO_RX * 0.82, r * ISO_RY * 0.82, palette.pinkShade);
-
-  const roofZ = 46;
-  const horses = Array.from({ length: 8 }, (_, i) => {
-    const angle = turn + (i / 8) * Math.PI * 2;
-    return { i, angle, base: rimPoint(c, r * 0.72, angle, 6) };
-  });
-  const drawHorse = ({ i, angle, base }: (typeof horses)[number]) => {
-    const bob = Math.sin(t * 3 + i * 1.4) * 3;
-    const [x, y] = base;
-    stroke(
-      ctx,
-      [
-        [x, y],
-        [x, y - (roofZ - 6) + (Math.sin(angle) * r * ISO_RY) / 4],
-      ],
-      palette.gold,
-      1.4,
-    );
-    const facing = Math.cos(angle + Math.PI / 2) < 0 ? -1 : 1;
-    const color = i % 2 ? palette.cream : palette.woodLight;
-    const hy = y - 16 + bob;
-    oval(ctx, x, hy, 6, 3.2, color);
-    poly(
-      ctx,
-      [
-        [x + facing * 4, hy - 1],
-        [x + facing * 7, hy - 7],
-        [x + facing * 9, hy - 6],
-        [x + facing * 6, hy + 1],
-      ],
-      color,
-    );
-    stroke(
-      ctx,
-      [
-        [x - 4, hy + 2],
-        [x - 5, hy + 7],
-      ],
-      color,
-      1.4,
-    );
-    stroke(
-      ctx,
-      [
-        [x + 4, hy + 2],
-        [x + 5, hy + 7],
-      ],
-      color,
-      1.4,
-    );
-    poly(
-      ctx,
-      [
-        [x - 2, hy - 3],
-        [x + 2, hy - 3],
-        [x + 1, hy - 1],
-        [x - 1, hy - 1],
-      ],
-      palette.red,
-    );
-  };
-  horses.filter((h) => Math.sin(h.angle) < 0).forEach(drawHorse);
-  const column = rimPoint(c, 0, 0, 6);
-  poly(
-    ctx,
-    [
-      [column[0] - 5, column[1]],
-      [column[0] + 5, column[1]],
-      [column[0] + 5, c[1] - roofZ],
-      [column[0] - 5, c[1] - roofZ],
-    ],
-    palette.gold,
-  );
-  poly(
-    ctx,
-    [
-      [column[0] - 2, column[1]],
-      [column[0] + 2, column[1]],
-      [column[0] + 2, c[1] - roofZ],
-      [column[0] - 2, c[1] - roofZ],
-    ],
-    palette.red,
-  );
-  horses.filter((h) => Math.sin(h.angle) >= 0).forEach(drawHorse);
-
-  dome(ctx, c, r * 1.15, roofZ, 26, RED, turn);
-  scallopRing(ctx, c, r * 1.15, roofZ, 14, 4, [palette.red, palette.cream]);
-  ringFlags(ctx, c, r * 1.05, roofZ - 6, t, 16);
-  knob(ctx, c[0], c[1] - roofZ - 26);
-  flag(ctx, c[0], c[1] - roofZ - 28, t, palette.gold);
 }
 
 // ── Square things ─────────────────────────────────────────────────────────
@@ -1458,9 +1358,38 @@ function rideRamp(
   ctx.restore();
 }
 
+const GATE_HALFPIPE_SKATERS: readonly {
+  tricks: readonly [SkateTrick, SkateTrick];
+  start: number;
+  look: SkaterLook;
+}[] = [
+  {
+    tricks: ['method', 'shove-it'],
+    start: SKATE_RIDE + SKATE_AIR,
+    look: {
+      skin: palette.skins[3],
+      shirt: palette.shirts[3],
+      pants: palette.pants[1],
+      helmet: palette.blue,
+    },
+  },
+  {
+    tricks: ['kickflip', 'indy-grab'],
+    start: 0,
+    look: {
+      skin: palette.skins[0],
+      shirt: palette.shirts[2],
+      pants: palette.pants[2],
+      helmet: palette.gold,
+    },
+  },
+];
+
 /**
  * A wooden halfpipe running along x, with a skater riding it: a Christ air
- * above the right lip and a 360 flip above the left one.
+ * above the right lip and a 360 flip above the left one. The one by the gate
+ * (variant 1) has two skaters, side by side across it, taking turns at each
+ * lip: kickflips and indy grabs, and method airs and pop shove-its.
  */
 function halfpipe(ctx: Ctx, prop: Prop, t: number) {
   const { length, deck, height } = HALFPIPE;
@@ -1489,11 +1418,20 @@ function halfpipe(ctx: Ctx, prop: Prop, t: number) {
     stroke(ctx, [at(x0 + lip, far, height), at(x0 + lip, near, height)], palette.metal, 1.6);
   }
 
-  const pose = skaterAt(t);
-  const mid = prop.y + prop.h / 2;
-  const ground = at(x0 + pose.u, mid, halfpipeHeight(pose.u));
-  oval(ctx, ground[0], ground[1], 5, 2, palette.shadow);
-  rideRamp(ctx, at(x0 + pose.u, mid, pose.z), pose, halfpipeHeight);
+  // The far rider first, so the near one passes in front of them.
+  const riders =
+    prop.variant === 1
+      ? GATE_HALFPIPE_SKATERS.map((rider, lane) => ({
+          pose: skaterAt(t + rider.start, rider.tricks),
+          v: far + (near - far) * (lane === 0 ? 0.3 : 0.7),
+          look: rider.look,
+        }))
+      : [{ pose: skaterAt(t), v: prop.y + prop.h / 2, look: HALFPIPE_SKATER }];
+  for (const { pose, v, look } of riders) {
+    const ground = at(x0 + pose.u, v, halfpipeHeight(pose.u));
+    oval(ctx, ground[0], ground[1], 5, 2, palette.shadow);
+    rideRamp(ctx, at(x0 + pose.u, v, pose.z), pose, halfpipeHeight, look);
+  }
 
   // The end of the right deck, then the side facing the midway, with its
   // struts. They hide the skater whenever they ride behind them.
@@ -2168,7 +2106,6 @@ const PROP_HEIGHTS: Record<Prop['kind'], number> = {
   'big-top': 100,
   'round-tent': 80,
   'peaked-tent': 56,
-  carousel: 86,
   wagon: 38,
   cart: 50,
   'ticket-booth': 46,
@@ -2365,8 +2302,6 @@ export function drawProp(ctx: Ctx, prop: Prop, t: number) {
     }
     case 'peaked-tent':
       return peakedTent(ctx, prop, t);
-    case 'carousel':
-      return carousel(ctx, prop, t);
     case 'wagon':
       return wagon(ctx, prop);
     case 'cart':

@@ -39,7 +39,6 @@ export type PropKind =
   | 'big-top'
   | 'round-tent'
   | 'peaked-tent'
-  | 'carousel'
   | 'wagon'
   | 'cart'
   | 'ticket-booth'
@@ -212,7 +211,8 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
   add('round-tent', 2, entrance, 4, 4, 2);
   add('cart', 7, entrance + 1, 1, 1, 3);
   add('ticket-booth', AVENUE_X - 2, height - 2);
-  add('carousel', 17, entrance, 4, 4);
+  // A second halfpipe where the carousel used to stand, with two skaters on it.
+  add('halfpipe', 17, entrance, HALFPIPE.length, 4, 1);
   add('balloons', 22, entrance + 4);
   add('planter', 15, entrance);
   // Three face-painted clowns hanging out at the crossroads in front of the gate.
@@ -257,7 +257,9 @@ export const SKATE_AIR = 0.9;
 
 /**
  * On the halfpipe, the 360 flip comes off the left lip and the Christ air off
- * the right one. On the street course, the kickflip 180 is above the quarter
+ * the right one. On the halfpipe by the gate, one skater does a kickflip off
+ * the right lip and an indy grab off the left, and the other a method air off
+ * the right lip and a pop shove-it off the left. On the street course, the kickflip 180 is above the quarter
  * pipe, and the 360 flip leads into a boardslide down the handrail. On the
  * second course, the indy grab is above its quarter pipe, an ollie gets onto
  * the grind box for a 50-50 grind or a manual along it, and the kickflip and
@@ -292,11 +294,14 @@ export interface SkaterPose {
 }
 
 /**
- * Where the skater is `t` seconds into their run: down the pipe and up to the
- * right lip for a Christ air, then back across to the left lip for a 360 flip,
- * over and over.
+ * Where a halfpipe skater is `t` seconds into their run: down the pipe and up
+ * to the right lip for `tricks[0]`, a Christ air unless told otherwise, then
+ * back across to the left lip for `tricks[1]`, a 360 flip, over and over.
  */
-export function skaterAt(t: number): SkaterPose {
+export function skaterAt(
+  t: number,
+  tricks: readonly [SkateTrick, SkateTrick] = ['christ-air', '360-flip'],
+): SkaterPose {
   const { length, deck, height, air } = HALFPIPE;
   const left = deck + 0.05;
   const right = length - deck - 0.05;
@@ -314,11 +319,11 @@ export function skaterAt(t: number): SkaterPose {
   };
   if (time < SKATE_RIDE) return ride(left, right, 1);
   time -= SKATE_RIDE;
-  if (time < SKATE_AIR) return pop(right, time < SKATE_AIR / 2 ? 1 : -1, 'christ-air');
+  if (time < SKATE_AIR) return pop(right, time < SKATE_AIR / 2 ? 1 : -1, tricks[0]);
   time -= SKATE_AIR;
   if (time < SKATE_RIDE) return ride(right, left, -1);
   time -= SKATE_RIDE;
-  return pop(left, time < SKATE_AIR / 2 ? -1 : 1, '360-flip');
+  return pop(left, time < SKATE_AIR / 2 ? -1 : 1, tricks[1]);
 }
 
 /**
