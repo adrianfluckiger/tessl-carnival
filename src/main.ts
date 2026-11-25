@@ -9,6 +9,14 @@ applyTheme();
 const app = document.querySelector<HTMLElement>('#app')!;
 let stop: (() => void) | undefined;
 
+/**
+ * Games taken off the midway for now, to clear the avenue across from the
+ * street skating course. They have no booth and no entry in the booth list,
+ * but #/play/<game-id> still opens them.
+ */
+const OFF_THE_MAP = new Set(['hook-a-duck', 'ring-toss', 'water-cannon', 'whack-a-mole']);
+const boothGames = () => registry.all().filter((game) => !OFF_THE_MAP.has(game.id));
+
 function bestText(game: CarnivalGame): string {
   const best = bestScore(game.id);
   return best === undefined ? 'No scores yet' : `Best: ${best}`;
@@ -41,8 +49,10 @@ function renderMidway() {
       </div>
     </section>`;
 
+  const games = boothGames();
+  app.querySelector<HTMLElement>('.midway-guide')!.hidden = games.length === 0;
   const guide = app.querySelector('.midway-guide ul')!;
-  for (const game of registry.all()) {
+  for (const game of games) {
     const item = document.createElement('li');
     item.innerHTML = `<a href="#/play/${game.id}"><span class="name"></span> <span class="best"></span></a>`;
     item.querySelector('.name')!.textContent = game.name;
@@ -65,7 +75,7 @@ function renderMidway() {
   };
 
   const midway = startMidway(app.querySelector('canvas')!, {
-    games: registry.all(),
+    games,
     onPlay: (gameId) => (location.hash = `#/play/${gameId}`),
     onReach: showBooth,
   });
