@@ -27,7 +27,7 @@ export interface Rect {
   h: number;
 }
 
-export type Ground = 'grass' | 'path';
+export type Ground = 'grass' | 'path' | 'concrete';
 
 export interface BoothSlot extends Rect {
   index: number;
@@ -51,6 +51,7 @@ export type PropKind =
   | 'halfpipe'
   | 'quarter-pipe'
   | 'stair-rail'
+  | 'grind-box'
   | 'bunting-pole'
   | 'billboard';
 
@@ -67,6 +68,8 @@ export interface MidwayMap {
   blocked: boolean[];
   /** The paved areas, for drawing. */
   paths: Rect[];
+  /** The concrete under the street skating features, for drawing. */
+  pads: Rect[];
   booths: BoothSlot[];
   props: Prop[];
   /** Pairs of poles with a string of bunting hung between them. */
@@ -135,6 +138,19 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
     }
   }
 
+  // Concrete under the street skating course, and under the second course to
+  // the right of it, where the back left corner used to hold a ride.
+  const side = FIRST_ROW_Y;
+  const pads: Rect[] = [
+    { x: 1, y: side - 1, w: 7, h: 7 },
+    { x: 1, y: 1, w: 8, h: 4 },
+  ];
+  for (const pad of pads) {
+    for (let y = pad.y; y < pad.y + pad.h; y++) {
+      for (let x = pad.x; x < pad.x + pad.w; x++) ground[y * width + x] = 'concrete';
+    }
+  }
+
   const props: Prop[] = [];
   const add = (kind: PropKind, x: number, y: number, w = 1, h = 1, variant = 0) => {
     props.push({ kind, x, y, w, h, variant });
@@ -183,7 +199,6 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
   }
 
   // Beside the booths: a street skating course on the left.
-  const side = FIRST_ROW_Y;
   // A billboard for AI DevCon, on the right.
   add('billboard', 19, side - 1, 3, 1);
   // A quarter pipe against the left hedge, facing the midway, and a stair set
@@ -191,6 +206,10 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
   add('quarter-pipe', 1, side, QUARTER_PIPE.length, 6);
   add('stair-rail', 4, side - 1, STAIR_SET.length, STAIR_SET.width);
   add('planter', 6, side + 5);
+  // To the right of it, across the path: a second quarter pipe against the
+  // left hedge, and a grind box with three skaters riding it.
+  add('quarter-pipe', 1, 1, QUARTER_PIPE.length, 4, 1);
+  add('grind-box', 3, 1, GRIND_BOX.length, GRIND_BOX.width);
   // Each extra row of booths gets a little more scenery beside it.
   for (let band = 2; band < rows; band++) {
     const y = side + band * ROW_SPACING;
@@ -219,6 +238,7 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
     ground,
     blocked,
     paths,
+    pads,
     booths,
     props,
     bunting,
@@ -252,9 +272,22 @@ export const SKATE_AIR = 0.9;
 /**
  * On the halfpipe, the 360 flip comes off the left lip and the Christ air off
  * the right one. On the street course, the kickflip 180 is above the quarter
- * pipe, and the 360 flip leads into a boardslide down the handrail.
+ * pipe, and the 360 flip leads into a boardslide down the handrail. On the
+ * second course, the indy grab is above its quarter pipe, an ollie gets onto
+ * the grind box for a 50-50 grind or a manual along it, and the kickflip and
+ * pop shove-it are on the flat beside it.
  */
-export type SkateTrick = '360-flip' | 'christ-air' | 'kickflip-180' | 'boardslide';
+export type SkateTrick =
+  | '360-flip'
+  | 'christ-air'
+  | 'kickflip-180'
+  | 'boardslide'
+  | 'indy-grab'
+  | 'ollie'
+  | '50-50'
+  | 'manual'
+  | 'kickflip'
+  | 'shove-it';
 
 export interface SkaterPose {
   /** Tiles along the halfpipe from its left end. */
@@ -322,10 +355,11 @@ export const QUARTER_TURN = 0.5;
 
 /**
  * Where the quarter pipe skater is `t` seconds into their run: up the ramp
- * for a kickflip 180 above the lip, down and out across the flat, then a
- * kick turn to face the ramp again, over and over.
+ * for a trick above the lip (a kickflip 180, unless another is given), down
+ * and out across the flat, then a kick turn to face the ramp again, over and
+ * over.
  */
-export function quarterSkaterAt(t: number): SkaterPose {
+export function quarterSkaterAt(t: number, trick: SkateTrick = 'kickflip-180'): SkaterPose {
   const { length, deck, height, air } = QUARTER_PIPE;
   const lip = deck + 0.05;
   const out = length - 0.2;
@@ -341,7 +375,7 @@ export function quarterSkaterAt(t: number): SkaterPose {
   if (time < QUARTER_AIR) {
     const s = time / QUARTER_AIR;
     const z = lerpNumber(quarterPipeHeight(lip), height + air, 4 * s * (1 - s));
-    return { u: lip, z, dir: s < 0.5 ? -1 : 1, trick: 'kickflip-180', progress: s };
+    return { u: lip, z, dir: s < 0.5 ? -1 : 1, trick, progress: s };
   }
   time -= QUARTER_AIR;
   if (time < QUARTER_RIDE) return ride(lip, out, 1);
@@ -494,6 +528,100 @@ export function railSkaterAt(t: number): RailSkaterPose {
   const a = Math.PI * s;
   const heading = { x: -Math.cos(a), y: -Math.sin(a) };
   return pose(top - 0.45 * Math.sin(a), mid + across * Math.cos(a), height, heading, s);
+}
+
+/**
+ * The grind box, in tiles from its back corner: a long, low box along x in
+ * the middle of a flat, with room to ride past either end. `start` and `end`
+ * are where it runs along x, and `far` and `near` its edges along y, with
+ * metal coping on both. Heights are in pixels.
+ */
+export const GRIND_BOX = {
+  length: 6,
+  width: 4,
+  start: 2,
+  end: 4,
+  far: 1.5,
+  near: 2.5,
+  height: 10,
+  /** How far in from either end of the flat the skaters turn round. */
+  turn: 0.5,
+  /** How high an ollie onto the box pops above it. */
+  air: 14,
+  /** How high a flip on the flat pops. */
+  flatAir: 16,
+};
+
+/**
+ * The three ways across the grind box: a 50-50 grind along its far coping,
+ * a manual along its top, and kickflips and pop shove-its on the flat in
+ * front of it.
+ */
+export type BoxLine = 'grind' | 'manual' | 'flat';
+
+/** How far along y each grind box skater rides, in tiles from its back corner. */
+export const BOX_LINES: Record<BoxLine, number> = {
+  grind: GRIND_BOX.far,
+  manual: (GRIND_BOX.far + GRIND_BOX.near) / 2,
+  flat: 3.3,
+};
+
+/** How fast the grind box skaters ride, in tiles a second. */
+export const BOX_SPEED = 2.4;
+/** Seconds a grind box skater takes to kick turn at either end. */
+export const BOX_TURN = 0.5;
+/** How far into their run each grind box skater starts, so they don't move in step. */
+const BOX_START: Record<BoxLine, number> = { grind: 0, manual: 1.4, flat: 2.9 };
+
+/**
+ * Where a grind box skater is `t` seconds into their run: across the flat
+ * and back, with a kick turn at either end, over and over. On the grind and
+ * manual lines they ollie up onto the box, grind or manual along it and drop
+ * off the other end, both ways. On the flat line they kickflip on the way
+ * along and pop shove-it on the way back.
+ */
+export function boxSkaterAt(t: number, line: BoxLine): SkaterPose {
+  const { length, start, end, height, turn, air, flatAir } = GRIND_BOX;
+  const from = turn;
+  const to = length - turn;
+  const pass = (to - from) / BOX_SPEED;
+  const cycle = 2 * (pass + BOX_TURN);
+  let time = (((t + BOX_START[line]) % cycle) + cycle) % cycle;
+  let dir: 1 | -1 = 1;
+  if (time >= pass + BOX_TURN) {
+    time -= pass + BOX_TURN;
+    dir = -1;
+  }
+  if (time >= pass) {
+    const s = (time - pass) / BOX_TURN;
+    return { u: dir === 1 ? to : from, z: 0, dir: s < 0.5 ? dir : dir === 1 ? -1 : 1, progress: s };
+  }
+  // The box sits in the middle of the flat, so each way along it looks the
+  // same from where the skater set off.
+  const p = from + time * BOX_SPEED;
+  const u = dir === 1 ? p : length - p;
+  if (line === 'flat') {
+    const pop = length / 2 - 0.6;
+    const s = (p - pop) / 1.2;
+    if (s <= 0 || s >= 1) return { u, z: 0, dir, progress: 0 };
+    const trick = dir === 1 ? 'kickflip' : 'shove-it';
+    return { u, z: flatAir * 4 * s * (1 - s), dir, trick, progress: s };
+  }
+  const up = start - 0.9;
+  const down = end + 0.5;
+  if (p > up && p < start) {
+    const s = (p - up) / (start - up);
+    return { u, z: height * s + air * 4 * s * (1 - s), dir, trick: 'ollie', progress: s };
+  }
+  if (p >= start && p <= end) {
+    const trick = line === 'grind' ? '50-50' : 'manual';
+    return { u, z: height, dir, trick, progress: (p - start) / (end - start) };
+  }
+  if (p > end && p < down) {
+    const s = (p - end) / (down - end);
+    return { u, z: height * (1 - s) + 4 * 4 * s * (1 - s), dir, progress: s };
+  }
+  return { u, z: 0, dir, progress: 0 };
 }
 
 function lerpNumber(a: number, b: number, s: number): number {
@@ -752,7 +880,7 @@ export function strollTiles(map: MidwayMap): Point[] {
   const tiles: Point[] = [];
   for (let y = 0; y < map.height; y++) {
     for (let x = 0; x < map.width; x++) {
-      if (map.ground[y * map.width + x] !== 'grass' && !isBlocked(map, x, y)) tiles.push({ x, y });
+      if (map.ground[y * map.width + x] === 'path' && !isBlocked(map, x, y)) tiles.push({ x, y });
     }
   }
   return tiles;
