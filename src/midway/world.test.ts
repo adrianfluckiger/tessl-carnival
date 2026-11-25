@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BOX_LINES,
+  BOX_SPEED,
+  BOX_TURN,
+  boxSkaterAt,
   boothInReach,
   canStand,
   createVisitors,
   createWalker,
   findPath,
   followPath,
+  GRIND_BOX,
   HALFPIPE,
   halfpipeHeight,
   inputDirection,
@@ -22,6 +27,7 @@ import {
   railHeight,
   railSkaterAt,
   seededRandom,
+  strollTiles,
   SKATE_AIR,
   SKATE_RIDE,
   skaterAt,
@@ -127,7 +133,9 @@ describe('layoutMidway', () => {
   it('puts the street skating course in the upper left, out of the way', () => {
     for (const games of [1, 5, 9]) {
       const map = layoutMidway(Array.from({ length: games }, (_, i) => `game-${i}`));
-      const course = map.props.filter((p) => p.kind === 'quarter-pipe' || p.kind === 'stair-rail');
+      const course = map.props.filter(
+        (p) => (p.kind === 'quarter-pipe' && p.variant === 0) || p.kind === 'stair-rail',
+      );
       expect(course.map((p) => p.kind).sort()).toEqual(['quarter-pipe', 'stair-rail']);
       const [quarter, stairs] = ['quarter-pipe', 'stair-rail'].map((kind) =>
         course.find((p) => p.kind === kind)!,
@@ -157,6 +165,50 @@ describe('layoutMidway', () => {
             part.y < other.y + other.h;
           expect(overlaps).toBe(false);
         }
+      }
+    }
+  });
+
+  it('builds a second course to the right of the street course, with concrete under both', () => {
+    for (const games of [1, 5, 9]) {
+      const map = layoutMidway(Array.from({ length: games }, (_, i) => `game-${i}`));
+      const stairs = map.props.find((p) => p.kind === 'stair-rail')!;
+      const quarters = map.props.filter((p) => p.kind === 'quarter-pipe');
+      expect(quarters).toHaveLength(2);
+      const second = quarters.find((p) => p.variant === 1)!;
+      const boxes = map.props.filter((p) => p.kind === 'grind-box');
+      expect(boxes).toHaveLength(1);
+      const box = boxes[0];
+      // The second quarter pipe has its back to the left hedge too, with the box beside it.
+      expect(second.x).toBe(1);
+      expect(box.x).toBeGreaterThanOrEqual(second.x + second.w);
+      expect(box.w).toBe(GRIND_BOX.length);
+      expect(box.x + box.w).toBeLessThanOrEqual(map.avenueX - 1);
+      const centre = (p: { x: number; y: number; w: number; h: number }) =>
+        toScreen(p.x + p.w / 2, p.y + p.h / 2);
+      for (const part of [second, box]) {
+        // To the right of the stair set, as it looks on screen.
+        expect(centre(part).x).toBeGreaterThan(centre(stairs).x);
+      }
+      // Every tile under every street skating feature is concrete, and only those
+      // and the gaps between them are.
+      const features = map.props.filter((p) =>
+        ['quarter-pipe', 'stair-rail', 'grind-box'].includes(p.kind),
+      );
+      expect(features).toHaveLength(4);
+      for (const part of features) {
+        for (let y = part.y; y < part.y + part.h; y++) {
+          for (let x = part.x; x < part.x + part.w; x++) {
+            expect(map.ground[y * map.width + x]).toBe('concrete');
+          }
+        }
+      }
+      for (const pad of map.pads) {
+        expect(features.some((p) => p.x < pad.x + pad.w && pad.x < p.x + p.w)).toBe(true);
+      }
+      // Visitors stroll the paths, not the skate park.
+      for (const tile of strollTiles(map)) {
+        expect(map.ground[tile.y * map.width + tile.x]).toBe('path');
       }
     }
   });
@@ -481,6 +533,103 @@ describe('the stair set skater', () => {
       expect(Math.abs(pose.z - last.z)).toBeLessThan(2);
       expect(Math.abs(pose.boardTurn - last.boardTurn)).toBeLessThan(0.1);
       last = pose;
+    }
+  });
+});
+
+describe('the second quarter pipe skater', () => {
+  it('does an indy grab above the lip instead of a kickflip 180', () => {
+    const pose = quarterSkaterAt(QUARTER_RIDE + QUARTER_AIR / 2, 'indy-grab');
+    expect(pose.trick).toBe('indy-grab');
+    expect(pose.z).toBeCloseTo(QUARTER_PIPE.height + QUARTER_PIPE.air);
+    expect(quarterSkaterAt(QUARTER_RIDE / 2, 'indy-grab')).toEqual(
+      quarterSkaterAt(QUARTER_RIDE / 2),
+    );
+  });
+});
+
+describe('the grind box skaters', () => {
+  const { length, start, end, height, turn } = GRIND_BOX;
+  const pass = (length - 2 * turn) / BOX_SPEED;
+  const cycle = 2 * (pass + BOX_TURN);
+  const lines = ['grind', 'manual', 'flat'] as const;
+
+  it('rides three separate lines: the far coping, the top of the box and the flat in front', () => {
+    expect(BOX_LINES.grind).toBe(GRIND_BOX.far);
+    expect(BOX_LINES.manual).toBeGreaterThan(GRIND_BOX.far);
+    expect(BOX_LINES.manual).toBeLessThan(GRIND_BOX.near);
+    expect(BOX_LINES.flat).toBeGreaterThan(GRIND_BOX.near);
+    expect(BOX_LINES.flat).toBeLessThan(GRIND_BOX.width);
+  });
+
+  it('50-50 grinds the coping and manuals the top, both ways along the box', () => {
+    for (const line of ['grind', 'manual'] as const) {
+      const tricks = new Set<string>();
+      const dirs = new Set<number>();
+      for (let t = 0; t < cycle; t += 0.01) {
+        const pose = boxSkaterAt(t, line);
+        if (pose.u > start + 0.01 && pose.u < end - 0.01) {
+          // Never through the box: on top of it or above it.
+          expect(pose.z).toBeGreaterThanOrEqual(height);
+        }
+        if (pose.trick === '50-50' || pose.trick === 'manual') {
+          tricks.add(pose.trick);
+          dirs.add(pose.dir);
+          expect(pose.z).toBe(height);
+          expect(pose.u).toBeGreaterThanOrEqual(start);
+          expect(pose.u).toBeLessThanOrEqual(end);
+        }
+        if (pose.u < start - 0.9 || pose.u > end + 0.9) expect(pose.z).toBe(0);
+      }
+      expect([...tricks]).toEqual([line === 'grind' ? '50-50' : 'manual']);
+      expect([...dirs].sort()).toEqual([-1, 1]);
+    }
+  });
+
+  it('ollies up onto the box, clearing its edge', () => {
+    const tricks = new Set<string>();
+    for (let t = 0; t < cycle; t += 0.01) {
+      const pose = boxSkaterAt(t, 'grind');
+      if (pose.trick !== 'ollie') continue;
+      tricks.add(pose.trick);
+      expect(pose.u < start || pose.u > end).toBe(true);
+      if (Math.abs(pose.u - start) < 0.15 || Math.abs(pose.u - end) < 0.15) {
+        expect(pose.z).toBeGreaterThan(height);
+      }
+    }
+    expect(tricks.has('ollie')).toBe(true);
+  });
+
+  it('kickflips along the flat, and pop shove-its on the way back', () => {
+    const seen = new Map<string, number>();
+    for (let t = 0; t < cycle; t += 0.01) {
+      const pose = boxSkaterAt(t, 'flat');
+      if (pose.trick) seen.set(pose.trick, pose.dir);
+      else expect(pose.z).toBe(0);
+    }
+    expect(seen.get('kickflip')).toBe(1);
+    expect(seen.get('shove-it')).toBe(-1);
+  });
+
+  it('kick turns at either end of the flat', () => {
+    for (const line of lines) {
+      for (let t = 0; t < cycle; t += 0.01) {
+        const pose = boxSkaterAt(t, line);
+        expect(pose.u).toBeGreaterThanOrEqual(turn - 1e-9);
+        expect(pose.u).toBeLessThanOrEqual(length - turn + 1e-9);
+      }
+    }
+  });
+
+  it('moves smoothly round the whole run, over and over', () => {
+    for (const line of lines) {
+      let last = boxSkaterAt(0, line);
+      for (let t = 0.01; t < cycle * 2; t += 0.01) {
+        const pose = boxSkaterAt(t, line);
+        expect(Math.abs(pose.u - last.u)).toBeLessThan(0.1);
+        expect(Math.abs(pose.z - last.z)).toBeLessThan(2);
+        last = pose;
+      }
     }
   });
 });
