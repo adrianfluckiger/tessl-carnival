@@ -5,7 +5,6 @@ import {
   boothBounds,
   drawArch,
   drawBooth,
-  drawBunting,
   drawCloud,
   drawFloaters,
   drawFrontHedge,
@@ -375,7 +374,6 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
 
     drawFrontHedge(ctx, map);
     if (onScreen(archBounds(map))) faded(archBounds(map), Infinity, () => drawArch(ctx, map, t));
-    drawBunting(ctx, map, t, visible);
     drawFloaters(ctx, floaters);
 
     // The prompt over the booth in reach, at full resolution.

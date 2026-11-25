@@ -53,7 +53,6 @@ export type PropKind =
   | 'stair-rail'
   | 'grind-box'
   | 'skate-pool'
-  | 'bunting-pole'
   | 'billboard';
 
 export interface Prop extends Rect {
@@ -73,8 +72,6 @@ export interface MidwayMap {
   pads: Rect[];
   booths: BoothSlot[];
   props: Prop[];
-  /** Pairs of poles with a string of bunting hung between them. */
-  bunting: [Point, Point][];
   /** The first x of the two-tile avenue; the gate sits at its south end. */
   avenueX: number;
   spawn: Point;
@@ -181,22 +178,6 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
     block(booth);
   }
 
-  // Poles either side of the avenue between booth rows, with bunting strung
-  // across the avenue and along it.
-  const bunting: [Point, Point][] = [];
-  for (let row = 0; row <= rows; row++) {
-    const y = FIRST_ROW_Y - 1 + row * ROW_SPACING;
-    const left = { x: AVENUE_X - 1, y };
-    const right = { x: AVENUE_X + 2, y };
-    add('bunting-pole', left.x, left.y);
-    add('bunting-pole', right.x, right.y);
-    bunting.push([left, right]);
-    if (row > 0) {
-      bunting.push([{ x: left.x, y: y - ROW_SPACING }, left]);
-      bunting.push([{ x: right.x, y: y - ROW_SPACING }, right]);
-    }
-  }
-
   // Beside the booths: a street skating course on the left.
   // A billboard for AI DevCon, on the right, with a skate pool in front of it.
   add('billboard', 19, side - 1, 3, 1);
@@ -247,7 +228,6 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
     pads,
     booths,
     props,
-    bunting,
     avenueX: AVENUE_X,
     // Just inside the gate, off to the side so the arch doesn't hide the player.
     spawn: { x: AVENUE_X + 3.5, y: height - 3 },

@@ -70,7 +70,7 @@ describe('layoutMidway', () => {
     const bottom = Math.max(...course.map((p) => p.y + p.h));
     const right = Math.max(...course.map((p) => p.x + p.w));
     for (const prop of map.props) {
-      if (['bunting-pole', 'billboard', 'skate-pool'].includes(prop.kind)) continue;
+      if (['billboard', 'skate-pool'].includes(prop.kind)) continue;
       const level = prop.y < bottom && top < prop.y + prop.h;
       expect(level && prop.x >= right, `${prop.kind} at ${prop.x},${prop.y}`).toBe(false);
     }
