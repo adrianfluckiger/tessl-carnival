@@ -1733,90 +1733,6 @@ export function drawBunting(ctx: Ctx, map: MidwayMap, t: number, view: Box) {
   });
 }
 
-function ferrisWheel(ctx: Ctx, prop: Prop, t: number) {
-  const cx = prop.x + prop.w / 2;
-  const cy = prop.y + prop.h / 2;
-  const radius = 60;
-  const hubZ = 76;
-  const spread = 0.28;
-  const turn = t * 0.2;
-  const cars = 10;
-  const hubAt = (offset: number) => at(cx, cy + offset, hubZ);
-  const onWheel = (offset: number, angle: number, r = radius): Pt => {
-    const [hx, hy] = hubAt(offset);
-    return [
-      hx + Math.cos(angle) * r * 0.894,
-      hy + Math.cos(angle) * r * 0.447 - Math.sin(angle) * r,
-    ];
-  };
-  const ring = (offset: number, r: number, color: string, width: number) => {
-    const points: Pt[] = [];
-    for (let i = 0; i <= 48; i++) points.push(onWheel(offset, (i / 48) * Math.PI * 2, r));
-    stroke(ctx, points, color, width);
-  };
-  const legs = (offset: number, color: string) => {
-    stroke(ctx, [at(cx - 1.4, cy + offset), hubAt(offset), at(cx + 1.4, cy + offset)], color, 4.5);
-  };
-
-  const base = at(cx, cy);
-  oval(ctx, base[0] + 10, base[1] + 4, 44, 14, palette.shadow);
-  legs(-spread - 0.15, palette.creamShade);
-  for (const side of [-spread, spread]) {
-    if (side > 0) {
-      // The cars hang between the two rims.
-      for (let i = 0; i < cars; i++) {
-        const angle = turn + (i / cars) * Math.PI * 2;
-        const [gx, gy] = onWheel(0, angle);
-        stroke(
-          ctx,
-          [
-            [gx, gy],
-            [gx, gy + 4],
-          ],
-          palette.metalShade,
-          1,
-        );
-        ctx.fillStyle = palette.red;
-        ctx.beginPath();
-        ctx.roundRect(gx - 5, gy + 4, 10, 8, 2);
-        ctx.fill();
-        poly(
-          ctx,
-          [
-            [gx - 6, gy + 4],
-            [gx + 6, gy + 4],
-            [gx + 4, gy + 1.5],
-            [gx - 4, gy + 1.5],
-          ],
-          palette.gold,
-        );
-        poly(
-          ctx,
-          [
-            [gx - 3.5, gy + 6],
-            [gx + 3.5, gy + 6],
-            [gx + 3.5, gy + 8.5],
-            [gx - 3.5, gy + 8.5],
-          ],
-          palette.cream,
-        );
-      }
-    }
-    for (let i = 0; i < cars; i++) {
-      const angle = turn + (i / cars) * Math.PI * 2;
-      stroke(ctx, [hubAt(side), onWheel(side, angle)], palette.cream, 1.4);
-    }
-    ring(side, radius * 0.6, palette.gold, 4);
-    ring(side, radius, side > 0 ? palette.blue : palette.blueShade, 4.5);
-  }
-  stroke(ctx, [hubAt(-spread), hubAt(spread)], palette.woodDark, 4);
-  const hub = hubAt(spread);
-  oval(ctx, hub[0], hub[1], 7, 7, palette.wood);
-  oval(ctx, hub[0], hub[1], 3.5, 3.5, palette.woodDark);
-  legs(spread + 0.15, palette.cream);
-  box(ctx, cx - 0.6, cy - 0.5, 1.2, 1, 0, 4, palette.creamShade, palette.cream, palette.creamShade);
-}
-
 // ── Booths ────────────────────────────────────────────────────────────────
 
 const BOOTH_SCHEMES = [
@@ -2040,7 +1956,6 @@ const PROP_HEIGHTS: Record<Prop['kind'], number> = {
   'big-top': 100,
   'round-tent': 80,
   'peaked-tent': 56,
-  'ferris-wheel': 150,
   carousel: 86,
   wagon: 38,
   cart: 50,
@@ -2237,8 +2152,6 @@ export function drawProp(ctx: Ctx, prop: Prop, t: number) {
     }
     case 'peaked-tent':
       return peakedTent(ctx, prop, t);
-    case 'ferris-wheel':
-      return ferrisWheel(ctx, prop, t);
     case 'carousel':
       return carousel(ctx, prop, t);
     case 'wagon':
