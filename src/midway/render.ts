@@ -1945,55 +1945,6 @@ function billboard(ctx: Ctx, prop: Prop, t: number) {
   });
 }
 
-/** How high the top of a bunting pole is. */
-const POLE_HEIGHT = 44;
-
-function buntingPole(ctx: Ctx, prop: Prop) {
-  const [x, y] = at(prop.x + 0.5, prop.y + 0.5);
-  oval(ctx, x + 2, y + 1, 4, 1.6, palette.shadow);
-  poly(
-    ctx,
-    [
-      [x - 1.3, y],
-      [x + 1.3, y],
-      [x + 1.3, y - POLE_HEIGHT],
-      [x - 1.3, y - POLE_HEIGHT],
-    ],
-    palette.cream,
-  );
-  for (let z = 4; z < POLE_HEIGHT; z += 8)
-    poly(
-      ctx,
-      [
-        [x - 1.3, y - z],
-        [x + 1.3, y - z - 2],
-        [x + 1.3, y - z - 5],
-        [x - 1.3, y - z - 3],
-      ],
-      palette.red,
-    );
-  knob(ctx, x, y - POLE_HEIGHT - 1);
-}
-
-/** Bunting between the poles, skipping any strung outside the view. */
-export function drawBunting(ctx: Ctx, map: MidwayMap, t: number, view: Box) {
-  map.bunting.forEach(([a, b], n) => {
-    const p = at(a.x + 0.5, a.y + 0.5, POLE_HEIGHT - 2);
-    const q = at(b.x + 0.5, b.y + 0.5, POLE_HEIGHT - 2);
-    if (Math.max(p[0], q[0]) < view.left || Math.min(p[0], q[0]) > view.right) return;
-    if (Math.max(p[1], q[1]) + 20 < view.top || Math.min(p[1], q[1]) > view.bottom) return;
-    const sag = Math.hypot(q[0] - p[0], q[1] - p[1]) * 0.12;
-    const points: Pt[] = [];
-    const count = 12;
-    for (let i = 0; i <= count; i++) {
-      const s = i / count;
-      points.push([lerp(p[0], q[0], s), lerp(p[1], q[1], s) + 4 * sag * s * (1 - s)]);
-    }
-    stroke(ctx, points, palette.woodDark, 0.6);
-    flags(ctx, points, t, 4, n);
-  });
-}
-
 // ── Booths ────────────────────────────────────────────────────────────────
 
 const BOOTH_SCHEMES = [
@@ -2231,7 +2182,6 @@ const PROP_HEIGHTS: Record<Prop['kind'], number> = {
   'stair-rail': STAIR_SET.height + STAIR_SET.rail + STAIR_SET.air + 40,
   'grind-box': GRIND_BOX.height + GRIND_BOX.air + 40,
   'skate-pool': SKATE_POOL.air + 40,
-  'bunting-pole': 0,
   billboard: BILLBOARD_HEIGHT + 40,
 };
 
@@ -2443,8 +2393,6 @@ export function drawProp(ctx: Ctx, prop: Prop, t: number) {
       return grindBox(ctx, prop, t);
     case 'skate-pool':
       return skatePool(ctx, prop, t);
-    case 'bunting-pole':
-      return buntingPole(ctx, prop);
     case 'billboard':
       return billboard(ctx, prop, t);
   }
