@@ -52,6 +52,7 @@ export type PropKind =
   | 'quarter-pipe'
   | 'stair-rail'
   | 'grind-box'
+  | 'skate-pool'
   | 'bunting-pole'
   | 'billboard';
 
@@ -199,8 +200,15 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
   }
 
   // Beside the booths: a street skating course on the left.
-  // A billboard for AI DevCon, on the right.
+  // A billboard for AI DevCon, on the right, with a skate pool in front of it.
   add('billboard', 19, side - 1, 3, 1);
+  add(
+    'skate-pool',
+    18,
+    side,
+    SKATE_POOL.length + 2 * SKATE_POOL.rim,
+    SKATE_POOL.width + 2 * SKATE_POOL.rim,
+  );
   // A quarter pipe against the left hedge, facing the midway, and a stair set
   // with a handrail down the middle beside it.
   add('quarter-pipe', 1, side, QUARTER_PIPE.length, 6);
@@ -275,7 +283,8 @@ export const SKATE_AIR = 0.9;
  * pipe, and the 360 flip leads into a boardslide down the handrail. On the
  * second course, the indy grab is above its quarter pipe, an ollie gets onto
  * the grind box for a 50-50 grind or a manual along it, and the kickflip and
- * pop shove-it are on the flat beside it.
+ * pop shove-it are on the flat beside it. In the skate pool, one skater does a
+ * McTwist above each wall and the other a method air.
  */
 export type SkateTrick =
   | '360-flip'
@@ -287,7 +296,9 @@ export type SkateTrick =
   | '50-50'
   | 'manual'
   | 'kickflip'
-  | 'shove-it';
+  | 'shove-it'
+  | 'mctwist'
+  | 'method';
 
 export interface SkaterPose {
   /** Tiles along the halfpipe from its left end. */
@@ -622,6 +633,60 @@ export function boxSkaterAt(t: number, line: BoxLine): SkaterPose {
     return { u, z: height * (1 - s) + 4 * 4 * s * (1 - s), dir, progress: s };
   }
   return { u, z: 0, dir, progress: 0 };
+}
+
+/**
+ * The skate pool, in tiles: a bowl `length` long along x and `width` across,
+ * sunk into a concrete deck `rim` wide. Its floor is flat in the middle and
+ * curves up into a wall at either end. Heights are in pixels, below the deck.
+ */
+export const SKATE_POOL = { length: 4, width: 3, rim: 0.5, ramp: 1.3, depth: 22, air: 30 };
+
+/** How far along y, in tiles from the bowl's far edge, each pool skater rides. */
+export const POOL_LANES = [1, 2] as const;
+
+/** How high the pool's surface is, in pixels, at `u` tiles along the bowl: 0 at the coping, below it inside. */
+export function poolHeight(u: number): number {
+  const { length, ramp, depth } = SKATE_POOL;
+  const fromWall = Math.min(u, length - u);
+  if (fromWall <= 0) return 0;
+  const s = Math.max(0, 1 - fromWall / ramp);
+  return -depth * (1 - s * s);
+}
+
+/** Seconds a pool skater takes to ride from one wall to the other. */
+export const POOL_RIDE = 1.4;
+/** Seconds a pool skater spends in the air above a wall. */
+export const POOL_AIR = 1;
+
+/**
+ * Where a pool skater is `t` seconds into their run: across the bowl, up the
+ * wall at its right end, `trick` in the air above the coping and back down
+ * into the bowl, then the same off the wall at its left end, over and over.
+ */
+export function poolSkaterAt(t: number, trick: SkateTrick): SkaterPose {
+  const { length, air } = SKATE_POOL;
+  const left = 0.05;
+  const right = length - 0.05;
+  const cycle = 2 * (POOL_RIDE + POOL_AIR);
+  let time = ((t % cycle) + cycle) % cycle;
+  const ride = (from: number, to: number, dir: 1 | -1): SkaterPose => {
+    const s = time / POOL_RIDE;
+    const u = lerpNumber(from, to, (1 - Math.cos(Math.PI * s)) / 2);
+    return { u, z: poolHeight(u), dir, progress: s };
+  };
+  const pop = (u: number, dir: 1 | -1): SkaterPose => {
+    const s = time / POOL_AIR;
+    const lip = poolHeight(u);
+    return { u, z: lip + (air - lip) * 4 * s * (1 - s), dir, trick, progress: s };
+  };
+  if (time < POOL_RIDE) return ride(left, right, 1);
+  time -= POOL_RIDE;
+  if (time < POOL_AIR) return pop(right, time < POOL_AIR / 2 ? 1 : -1);
+  time -= POOL_AIR;
+  if (time < POOL_RIDE) return ride(right, left, -1);
+  time -= POOL_RIDE;
+  return pop(left, time < POOL_AIR / 2 ? -1 : 1);
 }
 
 function lerpNumber(a: number, b: number, s: number): number {

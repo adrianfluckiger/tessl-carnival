@@ -17,6 +17,11 @@ import {
   isBlocked,
   layoutMidway,
   pathToBooth,
+  POOL_AIR,
+  POOL_LANES,
+  POOL_RIDE,
+  poolHeight,
+  poolSkaterAt,
   QUARTER_AIR,
   QUARTER_PIPE,
   QUARTER_RIDE,
@@ -30,6 +35,7 @@ import {
   strollTiles,
   SKATE_AIR,
   SKATE_RIDE,
+  SKATE_POOL,
   skaterAt,
   STAIR_SET,
   stairSlopeHeight,
@@ -64,7 +70,7 @@ describe('layoutMidway', () => {
     const bottom = Math.max(...course.map((p) => p.y + p.h));
     const right = Math.max(...course.map((p) => p.x + p.w));
     for (const prop of map.props) {
-      if (prop.kind === 'bunting-pole' || prop.kind === 'billboard') continue;
+      if (['bunting-pole', 'billboard', 'skate-pool'].includes(prop.kind)) continue;
       const level = prop.y < bottom && top < prop.y + prop.h;
       expect(level && prop.x >= right, `${prop.kind} at ${prop.x},${prop.y}`).toBe(false);
     }
@@ -209,6 +215,32 @@ describe('layoutMidway', () => {
       // Visitors stroll the paths, not the skate park.
       for (const tile of strollTiles(map)) {
         expect(map.ground[tile.y * map.width + tile.x]).toBe('path');
+      }
+    }
+  });
+
+  it('puts the skate pool in front of the AI DevCon billboard', () => {
+    for (const games of [0, 5, 9]) {
+      const map = layoutMidway(Array.from({ length: games }, (_, i) => `game-${i}`));
+      const pools = map.props.filter((p) => p.kind === 'skate-pool');
+      expect(pools).toHaveLength(1);
+      const pool = pools[0];
+      const billboard = map.props.find((p) => p.kind === 'billboard')!;
+      // Right in front of it, and wide enough to span it.
+      expect(pool.y).toBe(billboard.y + billboard.h);
+      expect(pool.x).toBeLessThanOrEqual(billboard.x);
+      expect(pool.x + pool.w).toBeGreaterThanOrEqual(billboard.x + billboard.w);
+      expect(pool.w).toBe(SKATE_POOL.length + 2 * SKATE_POOL.rim);
+      expect(pool.h).toBe(SKATE_POOL.width + 2 * SKATE_POOL.rim);
+      expect(isBlocked(map, pool.x, pool.y)).toBe(true);
+      for (const other of [...map.props, ...map.booths]) {
+        if (other === pool) continue;
+        const overlaps =
+          other.x < pool.x + pool.w &&
+          pool.x < other.x + other.w &&
+          other.y < pool.y + pool.h &&
+          pool.y < other.y + other.h;
+        expect(overlaps).toBe(false);
       }
     }
   });
@@ -630,6 +662,65 @@ describe('the grind box skaters', () => {
         expect(Math.abs(pose.z - last.z)).toBeLessThan(2);
         last = pose;
       }
+    }
+  });
+});
+
+describe('the skate pool skaters', () => {
+  const { length, depth, air } = SKATE_POOL;
+  const cycle = 2 * (POOL_RIDE + POOL_AIR);
+
+  it('sinks the bowl below the deck, with a flat floor and a wall at either end', () => {
+    expect(poolHeight(0)).toBe(0);
+    expect(poolHeight(length)).toBe(0);
+    expect(poolHeight(length / 2)).toBe(-depth);
+    expect(poolHeight(0.3)).toBeGreaterThan(poolHeight(0.6));
+  });
+
+  it('ride the surface of the bowl between the walls', () => {
+    for (let t = 0; t < POOL_RIDE; t += 0.1) {
+      const pose = poolSkaterAt(t, 'mctwist');
+      expect(pose.trick).toBeUndefined();
+      expect(pose.u).toBeGreaterThan(0);
+      expect(pose.u).toBeLessThan(length);
+      expect(pose.z).toBeCloseTo(poolHeight(pose.u));
+    }
+    expect(poolSkaterAt(POOL_RIDE / 2, 'mctwist').z).toBeCloseTo(-depth);
+  });
+
+  it('do their trick in the air above the coping at both ends, and land back in the bowl', () => {
+    for (const trick of ['mctwist', 'method'] as const) {
+      const right = poolSkaterAt(POOL_RIDE + POOL_AIR / 2, trick);
+      expect(right.trick).toBe(trick);
+      expect(right.u).toBeGreaterThan(length / 2);
+      expect(right.z).toBeCloseTo(air);
+      const left = poolSkaterAt(cycle - POOL_AIR / 2, trick);
+      expect(left.trick).toBe(trick);
+      expect(left.u).toBeLessThan(length / 2);
+      // Landed, and riding back down into the bowl the other way.
+      const landed = poolSkaterAt(POOL_RIDE + POOL_AIR + 0.3, trick);
+      expect(landed.trick).toBeUndefined();
+      expect(landed.dir).toBe(-1);
+      expect(landed.z).toBeLessThan(0);
+    }
+  });
+
+  it('ride two separate lanes across the bowl', () => {
+    expect(POOL_LANES).toHaveLength(2);
+    expect(POOL_LANES[0]).not.toBe(POOL_LANES[1]);
+    for (const lane of POOL_LANES) {
+      expect(lane).toBeGreaterThan(0);
+      expect(lane).toBeLessThan(SKATE_POOL.width);
+    }
+  });
+
+  it('move smoothly round the whole run, over and over', () => {
+    let last = poolSkaterAt(0, 'method');
+    for (let t = 0.01; t < cycle * 2; t += 0.01) {
+      const pose = poolSkaterAt(t, 'method');
+      expect(Math.abs(pose.u - last.u)).toBeLessThan(0.1);
+      expect(Math.abs(pose.z - last.z)).toBeLessThan(2);
+      last = pose;
     }
   });
 });
