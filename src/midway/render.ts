@@ -1267,7 +1267,9 @@ function concertStage(ctx: Ctx, prop: Prop, t: number) {
     const lit = (beat + i) % 2 === 0;
     if (lit) {
       const spot = deck(0.6 + ((i + 1) % 4) * 0.93, 1.3);
-      ctx.globalAlpha = 0.22;
+      // Relative to the caller's alpha, so the player-visibility fade still holds.
+      const alpha = ctx.globalAlpha;
+      ctx.globalAlpha = alpha * 0.22;
       poly(
         ctx,
         [
@@ -1278,7 +1280,7 @@ function concertStage(ctx: Ctx, prop: Prop, t: number) {
         ],
         color,
       );
-      ctx.globalAlpha = 1;
+      ctx.globalAlpha = alpha;
     }
     oval(ctx, lamp[0], lamp[1], 2.4, 2, lit ? color : palette.metalShade);
   }
