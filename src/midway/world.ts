@@ -259,9 +259,9 @@ export const SKATE_AIR = 0.9;
 /**
  * On the halfpipe, the 360 flip comes off the left lip and the Christ air off
  * the right one. On the street course, the kickflip 180 is above the quarter
- * pipe, and the 360 flip leads into a tailslide down the handrail.
+ * pipe, and the 360 flip leads into a boardslide down the handrail.
  */
-export type SkateTrick = '360-flip' | 'christ-air' | 'kickflip-180' | 'tailslide';
+export type SkateTrick = '360-flip' | 'christ-air' | 'kickflip-180' | 'boardslide';
 
 export interface SkaterPose {
   /** Tiles along the halfpipe from its left end. */
@@ -367,7 +367,7 @@ export const STAIR_SET = {
   width: 4,
   deck: 1,
   stairs: 2,
-  steps: 6,
+  steps: 4,
   /** How far along y the stairs reach; the bank fills the rest. */
   stairWidth: 2.4,
   /** How far along y the handrail runs. */
@@ -400,6 +400,11 @@ export interface RailSkaterPose extends SkaterPose {
   v: number;
   /** The way they're riding, along the ground, in tiles. */
   heading: Point;
+  /**
+   * How far the board has turned from the way they're riding, from 0 (along
+   * it) to 1 (a quarter turn, across the rail, for the boardslide).
+   */
+  boardTurn: number;
 }
 
 /** How long each part of the stair skater's run takes, in seconds. */
@@ -415,7 +420,7 @@ export const RAIL_TIMES = {
 
 /**
  * Where the stair set skater is `t` seconds into their run: along the deck,
- * a 360 flip onto the handrail, a tailslide down it, off onto the run out, a
+ * a 360 flip onto the handrail, a boardslide down it, off onto the run out, a
  * turn, back up the bank and a turn on the deck, over and over.
  */
 export function railSkaterAt(t: number): RailSkaterPose {
@@ -438,6 +443,7 @@ export function railSkaterAt(t: number): RailSkaterPose {
     heading: Point,
     progress: number,
     trick?: SkateTrick,
+    boardTurn = 0,
   ): RailSkaterPose => ({
     u,
     v,
@@ -445,6 +451,7 @@ export function railSkaterAt(t: number): RailSkaterPose {
     heading,
     progress,
     trick,
+    boardTurn,
     dir: heading.x - heading.y >= 0 ? 1 : -1,
   });
   const forward = { x: 1, y: 0 };
@@ -458,19 +465,21 @@ export function railSkaterAt(t: number): RailSkaterPose {
   if (time < times.flip) {
     const s = time / times.flip;
     const z = lerpNumber(height, railHeight(on), s) + air * 4 * s * (1 - s);
-    return pose(lerpNumber(pop, on, s), railY, z, forward, s, '360-flip');
+    // The board turns a quarter as it flips, to land across the rail.
+    return pose(lerpNumber(pop, on, s), railY, z, forward, s, '360-flip', s);
   }
   time -= times.flip;
   if (time < times.slide) {
     const s = time / times.slide;
     const u = lerpNumber(on, off, s);
-    return pose(u, railY, railHeight(u), forward, s, 'tailslide');
+    return pose(u, railY, railHeight(u), forward, s, 'boardslide', 1);
   }
   time -= times.slide;
   if (time < times.hop) {
     const s = time / times.hop;
     const z = lerpNumber(railHeight(off), 0, s) + 6 * 4 * s * (1 - s);
-    return pose(lerpNumber(off, land, s), railY, z, forward, s);
+    // And turns back under them as they hop off.
+    return pose(lerpNumber(off, land, s), railY, z, forward, s, undefined, 1 - s);
   }
   time -= times.hop;
   // Half an ellipse round the bottom of the bank, from the rail's line to the bank's.

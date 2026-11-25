@@ -1260,10 +1260,11 @@ const HALFPIPE_SKATER: SkaterLook = {
 
 /**
  * The skater, drawn upright with their feet at (0, 0). `board` is the ramp's
- * direction in this frame, so the board lies along it. In a tailslide it
- * points the way they slide, and the board sits forward under the back foot.
+ * direction in this frame, so the board lies along it. In a boardslide it
+ * points across the rail, the rail runs under the board's middle, and `rail`
+ * is the way the rail runs downhill in this frame.
  */
-function skater(ctx: Ctx, pose: SkaterPose, board: Pt, look = HALFPIPE_SKATER) {
+function skater(ctx: Ctx, pose: SkaterPose, board: Pt, look = HALFPIPE_SKATER, rail?: Pt) {
   const s = pose.progress;
   const flipping = pose.trick === '360-flip' || pose.trick === 'kickflip-180';
   const flip = flipping ? s : 0;
@@ -1272,7 +1273,7 @@ function skater(ctx: Ctx, pose: SkaterPose, board: Pt, look = HALFPIPE_SKATER) {
   const spin = pose.trick === 'kickflip-180' ? Math.PI * flip : Math.PI * 2 * flip;
   const tuck = Math.sin(Math.PI * flip);
   const christ = pose.trick === 'christ-air' ? Math.min(1, 2.2 * Math.sin(Math.PI * s)) : 0;
-  const slide = pose.trick === 'tailslide' ? 4 : 0;
+  const sliding = pose.trick === 'boardslide';
   const dir = pose.dir;
   const hip = -9 + 3 * tuck + (pose.trick ? 0 : 1);
   const shoulder = hip - 8;
@@ -1285,27 +1286,20 @@ function skater(ctx: Ctx, pose: SkaterPose, board: Pt, look = HALFPIPE_SKATER) {
   // Under the feet, or popped away from them, or held up in the front hand.
   // The front hand is the one they rode in with, so it stays the same hand
   // when they turn at the top of the air.
-  const under: Pt = [board[0] * slide, 2 + 7 * tuck + board[1] * slide];
+  const under: Pt = [0, 2 + 7 * tuck];
   const held = hand(s < 0.5 ? dir : -dir);
   const centre: Pt = [lerp(under[0], held[0], christ), lerp(under[1], held[1], christ)];
   const axisX = lerp(board[0], 0, christ);
   const axisY = lerp(board[1], 1, christ);
   const length = Math.hypot(axisX, axisY);
   skateboard(ctx, centre, [axisX / length, axisY / length], Math.PI * 2 * flip, spin);
-  if (slide) {
-    // Sparks off the tail where it grinds the rail.
+  if (sliding && rail) {
+    // Sparks off the board's middle where it grinds the rail, trailing back up it.
     for (let i = 0; i < 3; i++) {
       const flicker = Math.sin(s * 47 + i * 2.1);
       if (flicker < 0) continue;
-      const back = 7 + 3 * i * flicker;
-      oval(
-        ctx,
-        centre[0] - board[0] * back,
-        centre[1] - board[1] * back - i,
-        0.9,
-        0.9,
-        palette.gold,
-      );
+      const back = 2 + 3 * i * flicker;
+      oval(ctx, centre[0] - rail[0] * back, centre[1] - rail[1] * back - i, 0.9, 0.9, palette.gold);
     }
   }
 
@@ -1490,7 +1484,7 @@ function quarterPipe(ctx: Ctx, prop: Prop, t: number) {
 /**
  * A concrete stair set: a deck, stairs down along x with a handrail down
  * their middle, and a bank beside them. A skater rides off the deck, 360
- * flips onto the rail, tailslides down it, and rides back up the bank.
+ * flips onto the rail, boardslides down it, and rides back up the bank.
  */
 function stairRail(ctx: Ctx, prop: Prop, t: number) {
   const { width, deck, stairs, steps, stairWidth, railY, height } = STAIR_SET;
@@ -1557,19 +1551,25 @@ function stairRail(ctx: Ctx, prop: Prop, t: number) {
   const { x: hx, y: hy } = pose.heading;
   const u = x0 + pose.u;
   const v = y0 + pose.v;
-  const onSlope = pose.trick === 'tailslide' || (!pose.trick && pose.v === STAIR_SET.bankY);
-  const slope = onSlope
-    ? ((stairSlopeHeight(pose.u + 0.01) - stairSlopeHeight(pose.u)) / 0.01) * hx
-    : 0;
+  const onSlope = pose.trick === 'boardslide' || (!pose.trick && pose.v === STAIR_SET.bankY);
+  const slope = onSlope ? (stairSlopeHeight(pose.u + 0.01) - stairSlopeHeight(pose.u)) / 0.01 : 0;
   const ground = at(u, v, Math.min(pose.z, stairSurface(pose.u, pose.v)));
   oval(ctx, ground[0], ground[1], 5, 2, palette.shadow);
-  const dx = 16 * (hx - hy);
-  const dy = 8 * (hx + hy) - slope;
+  // The board lies the way they ride, turned by up to a quarter for the boardslide.
+  const turn = (Math.PI / 2) * pose.boardTurn;
+  const along = hx * Math.cos(turn) - hy * Math.sin(turn);
+  const across = hx * Math.sin(turn) + hy * Math.cos(turn);
+  const dx = 16 * (along - across);
+  const dy = 8 * (along + across) - slope * along;
   const run = Math.hypot(dx, dy);
+  // The rail runs the way they ride, down the slope.
+  const downX = 16 * (hx - hy);
+  const downY = 8 * (hx + hy) - slope * hx;
+  const downRun = Math.hypot(downX, downY);
   const feet = at(u, v, pose.z);
   ctx.save();
   ctx.translate(feet[0], feet[1]);
-  skater(ctx, pose, [dx / run, dy / run], RAIL_SKATER);
+  skater(ctx, pose, [dx / run, dy / run], RAIL_SKATER, [downX / downRun, downY / downRun]);
   ctx.restore();
 }
 

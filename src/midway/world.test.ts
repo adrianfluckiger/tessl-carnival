@@ -431,10 +431,21 @@ describe('the stair set skater', () => {
     }
   });
 
-  it('tailslides down the handrail', () => {
+  it('has four stairs down from the deck', () => {
+    expect(STAIR_SET.steps).toBe(4);
+  });
+
+  it('turns the board a quarter during the 360 flip, to land across the rail', () => {
+    expect(railSkaterAt(times.approach / 2).boardTurn).toBe(0);
+    expect(railSkaterAt(times.approach + times.flip / 2).boardTurn).toBeCloseTo(0.5);
+    expect(railSkaterAt(sliding + 0.01).boardTurn).toBe(1);
+  });
+
+  it('boardslides down the handrail, with the board across it', () => {
     for (let t = sliding; t < sliding + times.slide; t += 0.1) {
       const pose = railSkaterAt(t);
-      expect(pose.trick).toBe('tailslide');
+      expect(pose.trick).toBe('boardslide');
+      expect(pose.boardTurn).toBe(1);
       expect(pose.v).toBe(railY);
       expect(pose.u).toBeGreaterThan(deck);
       expect(pose.u).toBeLessThan(deck + stairs);
@@ -442,6 +453,12 @@ describe('the stair set skater', () => {
       expect(pose.dir).toBe(1);
     }
     expect(railSkaterAt(sliding + times.slide * 0.9).z).toBeLessThan(railSkaterAt(sliding + 0.1).z);
+  });
+
+  it('turns the board back under them as they hop off the rail', () => {
+    const hop = sliding + times.slide;
+    expect(railSkaterAt(hop + times.hop / 2).boardTurn).toBeCloseTo(0.5);
+    expect(railSkaterAt(hop + times.hop + 0.01).boardTurn).toBe(0);
   });
 
   it('rides back up the bank to the deck', () => {
@@ -462,6 +479,7 @@ describe('the stair set skater', () => {
       expect(Math.abs(pose.u - last.u)).toBeLessThan(0.1);
       expect(Math.abs(pose.v - last.v)).toBeLessThan(0.1);
       expect(Math.abs(pose.z - last.z)).toBeLessThan(2);
+      expect(Math.abs(pose.boardTurn - last.boardTurn)).toBeLessThan(0.1);
       last = pose;
     }
   });
