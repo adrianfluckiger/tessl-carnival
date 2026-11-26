@@ -2,7 +2,7 @@ import './style.css';
 import { applyTheme, bestScore, type CarnivalGame } from './carnival';
 import { registry } from './games';
 import { startMidway } from './midway/midway';
-import type { BoothSlot } from './midway/world';
+import type { BoothSlot, SkateFeature } from './midway/world';
 
 applyTheme();
 
@@ -47,6 +47,10 @@ function renderMidway() {
         <p class="best"></p>
         <a class="play">Play</a>
       </div>
+      <div class="skate-hint" aria-live="polite" hidden>
+        <h2></h2>
+        <ul></ul>
+      </div>
     </section>`;
 
   const games = boothGames();
@@ -74,10 +78,27 @@ function renderMidway() {
     if (game) link.href = `#/play/${game.id}`;
   };
 
+  const hint = app.querySelector<HTMLElement>('.skate-hint')!;
+  const showSkate = (feature: SkateFeature | undefined) => {
+    hint.hidden = feature === undefined;
+    if (!feature) return;
+    hint.querySelector('h2')!.textContent = feature.name;
+    const list = hint.querySelector('ul')!;
+    list.replaceChildren(
+      ...feature.tricks.map((move, i) => {
+        const item = document.createElement('li');
+        item.innerHTML = `<kbd>${i + 1}</kbd> <span></span>`;
+        item.querySelector('span')!.textContent = move.name;
+        return item;
+      }),
+    );
+  };
+
   const midway = startMidway(app.querySelector('canvas')!, {
     games,
     onPlay: (gameId) => (location.hash = `#/play/${gameId}`),
     onReach: showBooth,
+    onSkateReach: showSkate,
   });
   stop = midway.stop;
 }

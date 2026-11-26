@@ -9,6 +9,7 @@ import {
   CONCERT_STAGE,
   createVisitors,
   createWalker,
+  featureInReach,
   findPath,
   followPath,
   GRIND_BOX,
@@ -18,6 +19,9 @@ import {
   isBlocked,
   layoutMidway,
   pathToBooth,
+  PLAYER_RAIL_TIMES,
+  PLAYER_TRICK_LENGTH,
+  playerTrickAt,
   POOL_AIR,
   POOL_LANES,
   POOL_RIDE,
@@ -30,11 +34,15 @@ import {
   QUARTER_TURN,
   quarterPipeHeight,
   quarterSkaterAt,
+  RAIL_BOARD_TURN,
   RAIL_TIMES,
   railHeight,
   railSkaterAt,
   rockerAt,
   seededRandom,
+  SKATE_REACH,
+  skateFeatures,
+  startTrick,
   strollTiles,
   SKATE_AIR,
   SKATE_RIDE,
@@ -44,6 +52,8 @@ import {
   stairSlopeHeight,
   toScreen,
   toTile,
+  trickPosition,
+  updateTrick,
   updateVisitor,
   walk,
 } from './world';
@@ -650,6 +660,150 @@ describe('the stair set skater', () => {
       expect(Math.abs(pose.z - last.z)).toBeLessThan(2);
       expect(Math.abs(pose.boardTurn - last.boardTurn)).toBeLessThan(0.1);
       last = pose;
+    }
+  });
+});
+
+describe('skating the handrail', () => {
+  const map = layoutMidway([]);
+  const features = skateFeatures(map);
+  const rail = features.find((f) => f.kind === 'stair-rail')!;
+  const { x, y, w, h } = rail.prop;
+  const { deck, stairs, railY, height } = STAIR_SET;
+  const times = PLAYER_RAIL_TIMES;
+  const sliding = times.rideUp + times.setUp + times.pop;
+  // Standing on the open ground just in front of the stair set.
+  const beside = { x: x + w / 2, y: y + h + 0.5 };
+
+  it('lists the stair set as a feature with three tricks', () => {
+    expect(rail.prop.kind).toBe('stair-rail');
+    expect(rail.tricks.map((m) => m.trick)).toEqual(['50-50', 'boardslide', 'lipslide']);
+    expect(rail.tricks.map((m) => m.name)).toEqual(['50-50 grind', 'Boardslide', 'Lipslide']);
+    expect(canStand(map, beside.x, beside.y)).toBe(true);
+  });
+
+  it('is in reach only when the player stands next to it', () => {
+    expect(featureInReach(features, beside)).toBe(rail);
+    expect(featureInReach(features, { x: x + w + SKATE_REACH - 0.1, y: y + 1 })).toBe(rail);
+    expect(featureInReach(features, { x: x + w + SKATE_REACH + 0.2, y: y + 1 })).toBeUndefined();
+    expect(featureInReach(features, map.spawn)).toBeUndefined();
+  });
+
+  it('rides up from where the player stood onto the deck', () => {
+    const trick = startTrick(map, rail, 0, beside);
+    const start = trickPosition(trick, 0);
+    expect(start.x).toBeCloseTo(beside.x);
+    expect(start.y).toBeCloseTo(beside.y);
+    expect(playerTrickAt(trick, 0).z).toBe(0);
+    const up = playerTrickAt(trick, times.rideUp);
+    expect(up.z).toBe(height);
+    expect(up.u).toBeLessThan(deck);
+    expect(up.v).toBe(railY);
+  });
+
+  it('rides up on the ground and the bank, never through the stair set', () => {
+    // In front, behind, past the bottom and down the left side.
+    const starts = [
+      beside,
+      { x: x + 2, y: y - 0.5 },
+      { x: x + w + 0.5, y: y + 2 },
+      { x: x - 0.5, y: y + 2 },
+    ];
+    for (const from of starts) {
+      expect(featureInReach(features, from)).toBe(rail);
+      const trick = startTrick(map, rail, 0, from);
+      let last = playerTrickAt(trick, 0);
+      for (let t = 0; t <= times.rideUp; t += 0.01) {
+        const pose = playerTrickAt(trick, t);
+        const inside = pose.u >= 0 && pose.u <= w && pose.v >= 0 && pose.v <= h;
+        expect(pose.z).toBeCloseTo(inside ? stairSlopeHeight(pose.u) : 0);
+        expect(Math.abs(pose.u - last.u)).toBeLessThan(0.15);
+        expect(Math.abs(pose.v - last.v)).toBeLessThan(0.15);
+        expect(Math.abs(pose.z - last.z)).toBeLessThan(2);
+        last = pose;
+      }
+    }
+  });
+
+  it('does each trick down the rail, with the board turned its own way', () => {
+    rail.tricks.forEach((move, index) => {
+      const trick = startTrick(map, rail, index, beside);
+      expect(trick.trick).toBe(move.trick);
+      for (let t = sliding + 0.01; t < sliding + times.slide; t += 0.1) {
+        const pose = playerTrickAt(trick, t);
+        expect(pose.trick).toBe(move.trick);
+        expect(pose.boardTurn).toBe(RAIL_BOARD_TURN[move.trick]);
+        expect(pose.v).toBe(railY);
+        expect(pose.u).toBeGreaterThan(deck);
+        expect(pose.u).toBeLessThan(deck + stairs);
+        expect(pose.z).toBeCloseTo(railHeight(pose.u));
+      }
+    });
+    expect(new Set(Object.values(RAIL_BOARD_TURN)).size).toBe(3);
+  });
+
+  it('clears the handrail all the way onto it', () => {
+    const trick = startTrick(map, rail, 1, beside);
+    for (let t = times.rideUp + times.setUp; t < sliding; t += 0.01) {
+      const pose = playerTrickAt(trick, t);
+      if (pose.u < deck - 0.1) continue;
+      expect(pose.z).toBeGreaterThanOrEqual(railHeight(Math.max(pose.u, deck)) - 0.5);
+    }
+  });
+
+  it('moves smoothly from start to landing', () => {
+    const trick = startTrick(map, rail, 2, beside);
+    let last = playerTrickAt(trick, 0);
+    for (let t = 0.01; t <= PLAYER_TRICK_LENGTH; t += 0.01) {
+      const pose = playerTrickAt(trick, t);
+      expect(Math.abs(pose.u - last.u)).toBeLessThan(0.15);
+      expect(Math.abs(pose.v - last.v)).toBeLessThan(0.15);
+      expect(Math.abs(pose.z - last.z)).toBeLessThan(2);
+      expect(Math.abs(pose.boardTurn - last.boardTurn)).toBeLessThan(0.1);
+      last = pose;
+    }
+  });
+
+  it('lands at the bottom on open ground and hands control back', () => {
+    const trick = startTrick(map, rail, 0, beside);
+    expect(canStand(map, trick.to.x, trick.to.y)).toBe(true);
+    expect(trick.to.x).toBeGreaterThanOrEqual(x + deck + stairs);
+    let done = false;
+    let steps = 0;
+    while (!done) {
+      done = updateTrick(trick, 1 / 60);
+      steps++;
+    }
+    expect(Math.abs(steps - PLAYER_TRICK_LENGTH * 60)).toBeLessThanOrEqual(1);
+    expect(trick.t).toBe(PLAYER_TRICK_LENGTH);
+    const end = trickPosition(trick);
+    expect(end.x).toBeCloseTo(trick.to.x);
+    expect(end.y).toBeCloseTo(trick.to.y);
+    expect(playerTrickAt(trick).z).toBe(0);
+  });
+
+  it('takes the same time for every trick', () => {
+    expect(PLAYER_TRICK_LENGTH).toBeCloseTo(Object.values(times).reduce((a, b) => a + b, 0));
+    expect(PLAYER_TRICK_LENGTH).toBeGreaterThan(2);
+    expect(PLAYER_TRICK_LENGTH).toBeLessThan(6);
+  });
+
+  it('lands on the nearest open ground when booths fill the run out', () => {
+    const busy = layoutMidway(['a', 'b', 'c', 'd']);
+    const feature = skateFeatures(busy)[0];
+    const { prop } = feature;
+    const trick = startTrick(busy, feature, 0, { x: prop.x + 2, y: prop.y + 4.5 });
+    expect(canStand(busy, trick.to.x, trick.to.y)).toBe(true);
+    // The roll out stays on the stair set's flat run out or on open ground.
+    const rollOut = PLAYER_TRICK_LENGTH - times.rollOut;
+    for (let t = rollOut; t <= PLAYER_TRICK_LENGTH; t += 0.01) {
+      const at = trickPosition(trick, t);
+      const tx = Math.floor(at.x);
+      const ty = Math.floor(at.y);
+      const onFeature =
+        tx >= prop.x && tx < prop.x + prop.w && ty >= prop.y && ty < prop.y + prop.h;
+      if (onFeature) expect(at.x - prop.x).toBeGreaterThanOrEqual(deck + stairs);
+      else expect(isBlocked(busy, tx, ty)).toBe(false);
     }
   });
 });
