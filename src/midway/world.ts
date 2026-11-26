@@ -630,11 +630,11 @@ export function featureInReach(
 
 /**
  * How long each part of the player's run down the handrail takes, in
- * seconds: riding up onto the deck, turning to face down the rail, popping
+ * seconds: riding round to the bank and up it onto the deck, turning to face down the rail, popping
  * onto it, the trick down it, hopping off and rolling out to where they land.
  */
 export const PLAYER_RAIL_TIMES = {
-  rideUp: 0.9,
+  rideUp: 1.6,
   setUp: 0.4,
   pop: 0.6,
   slide: 1.1,
@@ -657,25 +657,61 @@ export interface PlayerTrick {
 }
 
 /**
+ * Whether the player can roll along the ground at a point while leaving a
+ * skate feature: on the stair set's flat run out, or on open ground clear of
+ * everything else.
+ */
+function canRollOut(map: MidwayMap, feature: SkateFeature, x: number, y: number): boolean {
+  const { prop } = feature;
+  const u = x - prop.x;
+  const v = y - prop.y;
+  if (u >= 0 && u <= prop.w && v >= 0 && v <= prop.h) return u >= STAIR_SET.deck + STAIR_SET.stairs;
+  const r = WALKER_RADIUS;
+  for (let ty = Math.floor(y - r); ty <= Math.floor(y + r); ty++) {
+    for (let tx = Math.floor(x - r); tx <= Math.floor(x + r); tx++) {
+      const onFeature =
+        tx >= prop.x && tx < prop.x + prop.w && ty >= prop.y && ty < prop.y + prop.h;
+      if (!onFeature && isBlocked(map, tx, ty)) return false;
+    }
+  }
+  return true;
+}
+
+/** Whether the player can roll in a straight line from `from` to `to` while leaving a feature. */
+function clearRollOut(map: MidwayMap, feature: SkateFeature, from: Point, to: Point): boolean {
+  const steps = Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / 0.05);
+  for (let i = 0; i <= steps; i++) {
+    const s = steps === 0 ? 0 : i / steps;
+    if (!canRollOut(map, feature, lerpNumber(from.x, to.x, s), lerpNumber(from.y, to.y, s))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Where the player lands after skating a feature: rolling straight on from
- * the handrail's end to the first open ground, or else the open tile nearest
- * it.
+ * the handrail's end to the first open ground, or else the nearest open tile
+ * they can roll to without passing through anything.
  */
 export function landingSpot(map: MidwayMap, feature: SkateFeature): Point {
   const { x, y } = feature.prop;
   const end = { x: x + RAIL_LINE.land, y: y + STAIR_SET.railY };
   for (let d = 0; d <= 4; d += 0.1) {
-    if (canStand(map, end.x + d, end.y)) return { x: end.x + d, y: end.y };
+    const at = { x: end.x + d, y: end.y };
+    if (!canRollOut(map, feature, at.x, at.y)) break;
+    if (canStand(map, at.x, at.y)) return at;
   }
   let best = end;
   let bestDistance = Infinity;
   for (let ty = 0; ty < map.height; ty++) {
     for (let tx = 0; tx < map.width; tx++) {
-      const distance = Math.hypot(tx + 0.5 - end.x, ty + 0.5 - end.y);
-      if (distance < bestDistance && canStand(map, tx + 0.5, ty + 0.5)) {
-        best = { x: tx + 0.5, y: ty + 0.5 };
-        bestDistance = distance;
-      }
+      const at = { x: tx + 0.5, y: ty + 0.5 };
+      const distance = Math.hypot(at.x - end.x, at.y - end.y);
+      if (distance >= bestDistance || !canStand(map, at.x, at.y)) continue;
+      if (!clearRollOut(map, feature, end, at)) continue;
+      best = at;
+      bestDistance = distance;
     }
   }
   return best;
@@ -709,9 +745,55 @@ function headingTo(from: Point, to: Point): Point {
 }
 
 /**
+ * How high the stair set's surface is at a point, in tiles from its back
+ * corner: the deck, the stairs and the bank inside it, and the ground around it.
+ */
+function stairSurfaceHeight(u: number, v: number): number {
+  const { length, width } = STAIR_SET;
+  return u >= 0 && u <= length && v >= 0 && v <= width ? stairSlopeHeight(u) : 0;
+}
+
+/**
+ * The way the player rides up onto the deck from where they stood, in tiles
+ * from the stair set's back corner: round the stair set on the ground to the
+ * foot of the bank, up the bank, then across the deck to the top of the rail.
+ */
+function rideUpPath(from: Point): Point[] {
+  const { deck, stairs, width, railY, bankY } = STAIR_SET;
+  // Just past the foot of the stairs and the bank, where the ground is flat.
+  const foot = deck + stairs + 0.4;
+  const path = [from];
+  if (from.x < foot && from.y > 0 && from.y < width) path.push({ x: from.x, y: width + 0.4 });
+  const last = path[path.length - 1];
+  if (last.x < foot) path.push({ x: foot, y: last.y });
+  path.push({ x: foot, y: bankY }, { x: RAIL_LINE.top, y: bankY }, { x: RAIL_LINE.top, y: railY });
+  return path;
+}
+
+/** The point `s` of the way along a path, by distance, and the way it heads there. */
+function alongPath(path: readonly Point[], s: number): { at: Point; heading: Point } {
+  const legs = path.slice(1).map((to, i) => Math.hypot(to.x - path[i].x, to.y - path[i].y));
+  let left = s * legs.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < legs.length; i++) {
+    if (legs[i] < 1e-6) continue;
+    if (left <= legs[i] || i === legs.length - 1) {
+      const k = Math.min(1, left / legs[i]);
+      const from = path[i];
+      const to = path[i + 1];
+      return {
+        at: { x: lerpNumber(from.x, to.x, k), y: lerpNumber(from.y, to.y, k) },
+        heading: headingTo(from, to),
+      };
+    }
+    left -= legs[i];
+  }
+  return { at: path[path.length - 1], heading: FORWARD };
+}
+
+/**
  * Where the player is `t` seconds into a trick, in tiles from the feature's
- * back corner like the stair set skater: up onto the deck from where they
- * stood, a turn to face down the rail, an ollie onto it, the trick down it,
+ * back corner like the stair set skater: round to the bank and up it onto
+ * the deck from where they stood, a turn to face down the rail, an ollie onto it, the trick down it,
  * a hop off and a roll out to where they land.
  */
 export function playerTrickAt(trick: PlayerTrick, t = trick.t): RailSkaterPose {
@@ -722,12 +804,12 @@ export function playerTrickAt(trick: PlayerTrick, t = trick.t): RailSkaterPose {
   const top = { x: RAIL_LINE.top, y: railY };
   const ease = (s: number) => (1 - Math.cos(Math.PI * s)) / 2;
   let time = Math.max(0, Math.min(t, PLAYER_TRICK_LENGTH));
-  const up = headingTo(from, top);
+  const path = rideUpPath(from);
+  const up = headingTo(path[path.length - 2], top);
   if (time < times.rideUp) {
     const s = time / times.rideUp;
-    const e = ease(s);
-    const at = { x: lerpNumber(from.x, top.x, e), y: lerpNumber(from.y, top.y, e) };
-    return railPose(at.x, at.y, height * e, up, s);
+    const { at, heading } = alongPath(path, ease(s));
+    return railPose(at.x, at.y, stairSurfaceHeight(at.x, at.y), heading, s);
   }
   time -= times.rideUp;
   if (time < times.setUp) {

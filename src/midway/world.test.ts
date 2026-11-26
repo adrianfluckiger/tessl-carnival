@@ -701,6 +701,30 @@ describe('skating the handrail', () => {
     expect(up.v).toBe(railY);
   });
 
+  it('rides up on the ground and the bank, never through the stair set', () => {
+    // In front, behind, past the bottom and down the left side.
+    const starts = [
+      beside,
+      { x: x + 2, y: y - 0.5 },
+      { x: x + w + 0.5, y: y + 2 },
+      { x: x - 0.5, y: y + 2 },
+    ];
+    for (const from of starts) {
+      expect(featureInReach(features, from)).toBe(rail);
+      const trick = startTrick(map, rail, 0, from);
+      let last = playerTrickAt(trick, 0);
+      for (let t = 0; t <= times.rideUp; t += 0.01) {
+        const pose = playerTrickAt(trick, t);
+        const inside = pose.u >= 0 && pose.u <= w && pose.v >= 0 && pose.v <= h;
+        expect(pose.z).toBeCloseTo(inside ? stairSlopeHeight(pose.u) : 0);
+        expect(Math.abs(pose.u - last.u)).toBeLessThan(0.15);
+        expect(Math.abs(pose.v - last.v)).toBeLessThan(0.15);
+        expect(Math.abs(pose.z - last.z)).toBeLessThan(2);
+        last = pose;
+      }
+    }
+  });
+
   it('does each trick down the rail, with the board turned its own way', () => {
     rail.tricks.forEach((move, index) => {
       const trick = startTrick(map, rail, index, beside);
@@ -767,8 +791,20 @@ describe('skating the handrail', () => {
   it('lands on the nearest open ground when booths fill the run out', () => {
     const busy = layoutMidway(['a', 'b', 'c', 'd']);
     const feature = skateFeatures(busy)[0];
-    const trick = startTrick(busy, feature, 0, { x: feature.prop.x + 2, y: feature.prop.y + 4.5 });
+    const { prop } = feature;
+    const trick = startTrick(busy, feature, 0, { x: prop.x + 2, y: prop.y + 4.5 });
     expect(canStand(busy, trick.to.x, trick.to.y)).toBe(true);
+    // The roll out stays on the stair set's flat run out or on open ground.
+    const rollOut = PLAYER_TRICK_LENGTH - times.rollOut;
+    for (let t = rollOut; t <= PLAYER_TRICK_LENGTH; t += 0.01) {
+      const at = trickPosition(trick, t);
+      const tx = Math.floor(at.x);
+      const ty = Math.floor(at.y);
+      const onFeature =
+        tx >= prop.x && tx < prop.x + prop.w && ty >= prop.y && ty < prop.y + prop.h;
+      if (onFeature) expect(at.x - prop.x).toBeGreaterThanOrEqual(deck + stairs);
+      else expect(isBlocked(busy, tx, ty)).toBe(false);
+    }
   });
 });
 
