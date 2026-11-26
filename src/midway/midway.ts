@@ -352,7 +352,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     // Anything drawn in front of the player fades, so they never get lost.
     const feet = toScreen(player.x, player.y);
     // Mid-trick, the player rides on top of the feature, so draw them just after it.
-    const skating = trick && scenery.find((item) => item.prop === trick!.feature.prop);
+    const skating = trick && scenery.find((item) => item.prop === trick!.prop);
     const playerDepth = skating ? skating.depth + 0.01 : player.x + player.y;
     const hidesPlayer = (box: Box, depth: number) =>
       depth > playerDepth &&

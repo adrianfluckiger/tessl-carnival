@@ -19,8 +19,10 @@ import {
   isBlocked,
   layoutMidway,
   pathToBooth,
+  PLAYER_BOX_TIMES,
   PLAYER_HALFPIPE_LENGTH,
   PLAYER_HALFPIPE_TIMES,
+  PLAYER_QUARTER_TIMES,
   PLAYER_RAIL_TIMES,
   PLAYER_TRICK_LENGTH,
   playerTrickAt,
@@ -672,7 +674,7 @@ describe('skating the handrail', () => {
   const map = layoutMidway([]);
   const features = skateFeatures(map);
   const rail = features.find((f) => f.kind === 'stair-rail')!;
-  const { x, y, w, h } = rail.prop;
+  const { x, y, w, h } = rail.props[0];
   const { deck, stairs, railY, height } = STAIR_SET;
   const times = PLAYER_RAIL_TIMES;
   const sliding = times.rideUp + times.setUp + times.pop;
@@ -680,7 +682,7 @@ describe('skating the handrail', () => {
   const beside = { x: x + w / 2, y: y + h + 0.5 };
 
   it('lists the stair set as a feature with three tricks', () => {
-    expect(rail.prop.kind).toBe('stair-rail');
+    expect(rail.props.map((p) => p.kind)).toEqual(['stair-rail']);
     expect(rail.tricks.map((m) => m.trick)).toEqual(['50-50', 'boardslide', 'lipslide']);
     expect(rail.tricks.map((m) => m.name)).toEqual(['50-50 grind', 'Boardslide', 'Lipslide']);
     expect(canStand(map, beside.x, beside.y)).toBe(true);
@@ -795,7 +797,7 @@ describe('skating the handrail', () => {
   it('lands on the nearest open ground when booths fill the run out', () => {
     const busy = layoutMidway(['a', 'b', 'c', 'd']);
     const feature = skateFeatures(busy)[0];
-    const { prop } = feature;
+    const [prop] = feature.props;
     const trick = startTrick(busy, feature, 0, { x: prop.x + 2, y: prop.y + 4.5 });
     expect(canStand(busy, trick.to.x, trick.to.y)).toBe(true);
     // The roll out stays on the stair set's flat run out or on open ground.
@@ -816,7 +818,8 @@ describe('skating the halfpipe by the gate', () => {
   const map = layoutMidway([]);
   const features = skateFeatures(map);
   const pipe = features.find((f) => f.kind === 'halfpipe')!;
-  const { x, y, w, h } = pipe.prop;
+  const [prop] = pipe.props;
+  const { x, y, w, h } = prop;
   const { length, deck, height, air } = HALFPIPE;
   const times = PLAYER_HALFPIPE_TIMES;
   const flying = times.rideOver + times.climb + times.dropIn;
@@ -829,7 +832,7 @@ describe('skating the halfpipe by the gate', () => {
     expect(halfpipes).toHaveLength(2);
     expect(features.filter((f) => f.kind === 'halfpipe')).toHaveLength(1);
     // The one by the gate is the lower one, nearer the gate.
-    expect(pipe.prop.y).toBe(Math.max(...halfpipes.map((p) => p.y)));
+    expect(prop.y).toBe(Math.max(...halfpipes.map((p) => p.y)));
     expect(pipe.name).toBe('Halfpipe');
     expect(pipe.tricks.map((m) => m.trick)).toEqual(['frontside-air', 'kickflip', '540']);
     expect(pipe.tricks.map((m) => m.name)).toEqual(['Frontside air', 'Kickflip', '540']);
@@ -933,11 +936,188 @@ describe('skating the halfpipe by the gate', () => {
 
   it('takes the same time for every trick, a little longer than the handrail', () => {
     expect(PLAYER_HALFPIPE_LENGTH).toBeCloseTo(Object.values(times).reduce((a, b) => a + b, 0));
-    expect(trickLength(pipe)).toBe(PLAYER_HALFPIPE_LENGTH);
-    expect(trickLength(features[0])).toBe(PLAYER_TRICK_LENGTH);
+    pipe.tricks.forEach((_, index) => {
+      expect(trickLength(startTrick(map, pipe, index, front))).toBe(PLAYER_HALFPIPE_LENGTH);
+    });
+    expect(trickLength(startTrick(map, features[0], 0, front))).toBe(PLAYER_TRICK_LENGTH);
     expect(times.air).toBe(SKATE_AIR);
     expect(PLAYER_HALFPIPE_LENGTH).toBeGreaterThan(PLAYER_TRICK_LENGTH);
     expect(PLAYER_HALFPIPE_LENGTH).toBeLessThan(7);
+  });
+});
+
+describe('skating the quarter pipe and grind box', () => {
+  const map = layoutMidway([]);
+  const features = skateFeatures(map);
+  const pair = features.find((f) => f.kind === 'quarter-box')!;
+  const [quarter, box] = pair.props;
+  // Standing on the open ground just in front of each of them, and beside the grind box's far end.
+  const byQuarter = { x: quarter.x + quarter.w / 2, y: quarter.y + quarter.h + 0.5 };
+  const byBox = { x: box.x + 4.5, y: box.y + box.h + 0.5 };
+  const pastBox = { x: box.x + box.w + 0.5, y: box.y + 1.5 };
+  const quarterLength = Object.values(PLAYER_QUARTER_TIMES).reduce((a, b) => a + b, 0);
+  const boxLength = Object.values(PLAYER_BOX_TIMES).reduce((a, b) => a + b, 0);
+
+  it('lists the second quarter pipe and the grind box as one feature with three tricks', () => {
+    expect(quarter).toMatchObject({ kind: 'quarter-pipe', x: 1, y: 1, variant: 1 });
+    expect(box).toMatchObject({ kind: 'grind-box', x: 3, y: 1 });
+    expect(pair.tricks.map((m) => m.trick)).toEqual(['indy-grab', '50-50', 'manual']);
+    expect(pair.tricks.map((m) => m.name)).toEqual(['Indy grab', '50-50 grind', 'Manual']);
+    expect(pair.tricks.map((m) => m.on)).toEqual(['quarter-pipe', 'grind-box', 'grind-box']);
+    // The first quarter pipe, on the street course, isn't one.
+    expect(features.flatMap((f) => f.props).filter((p) => p.kind === 'quarter-pipe')).toEqual([
+      quarter,
+    ]);
+    for (const at of [byQuarter, byBox, pastBox]) expect(canStand(map, at.x, at.y)).toBe(true);
+  });
+
+  it('is in reach next to either the quarter pipe or the grind box', () => {
+    expect(featureInReach(features, byQuarter)).toBe(pair);
+    expect(featureInReach(features, byBox)).toBe(pair);
+    expect(featureInReach(features, pastBox)).toBe(pair);
+    const below = quarter.y + quarter.h;
+    expect(featureInReach(features, { x: 2, y: below + SKATE_REACH - 0.1 })).toBe(pair);
+    expect(featureInReach(features, { x: 2, y: below + SKATE_REACH + 0.2 })).not.toBe(pair);
+    expect(
+      featureInReach(features, { x: box.x + box.w + SKATE_REACH + 0.2, y: 2 }),
+    ).toBeUndefined();
+    expect(featureInReach(features, map.spawn)).toBeUndefined();
+  });
+
+  it('does each trick on its own prop and lands on open ground', () => {
+    pair.tricks.forEach((move, index) => {
+      const trick = startTrick(map, pair, index, byBox);
+      expect(trick.trick).toBe(move.trick);
+      expect(trick.prop).toBe(index === 0 ? quarter : box);
+      expect(canStand(map, trick.to.x, trick.to.y)).toBe(true);
+    });
+  });
+
+  it('indy grabs above the quarter pipe lip, the way its skater does', () => {
+    const trick = startTrick(map, pair, 0, byQuarter);
+    const times = PLAYER_QUARTER_TIMES;
+    const air = times.rideIn + times.setUp + times.up;
+    const top = playerTrickAt(trick, air + times.air / 2);
+    expect(top.trick).toBe('indy-grab');
+    expect(top.u).toBeLessThan(QUARTER_PIPE.deck + 0.1);
+    expect(top.v).toBe(quarter.h / 2);
+    expect(top.z).toBeCloseTo(QUARTER_PIPE.height + QUARTER_PIPE.air);
+    let tricks = 0;
+    for (let t = 0; t <= quarterLength; t += 0.01) {
+      const pose = playerTrickAt(trick, t);
+      if (pose.trick) {
+        tricks++;
+        expect(t).toBeGreaterThanOrEqual(air - 1e-9);
+        expect(t).toBeLessThanOrEqual(air + times.air + 1e-9);
+      } else if (pose.u >= 0 && pose.u <= quarter.w && pose.v >= 0 && pose.v <= quarter.h) {
+        // Never through the ramp: on its surface.
+        expect(pose.z).toBeCloseTo(quarterPipeHeight(pose.u));
+      } else expect(pose.z).toBe(0);
+    }
+    expect(tricks).toBeGreaterThan(0);
+  });
+
+  it('50-50 grinds the far coping and manuals the top of the grind box', () => {
+    const times = PLAYER_BOX_TIMES;
+    const along = times.rideIn + times.setUp;
+    for (const [index, line] of [
+      [1, 'grind'],
+      [2, 'manual'],
+    ] as const) {
+      for (const from of [byBox, pastBox]) {
+        const trick = startTrick(map, pair, index, from);
+        const seen = new Set<string>();
+        for (let t = 0; t <= boxLength; t += 0.01) {
+          const pose = playerTrickAt(trick, t);
+          const overBox =
+            pose.u > GRIND_BOX.start + 0.01 &&
+            pose.u < GRIND_BOX.end - 0.01 &&
+            pose.v >= GRIND_BOX.far - 0.3 &&
+            pose.v <= GRIND_BOX.near + 0.3;
+          // Never through the box: on top of it or above it.
+          if (overBox) expect(pose.z).toBeGreaterThanOrEqual(GRIND_BOX.height);
+          if (pose.trick) seen.add(pose.trick);
+          if (pose.trick === pair.tricks[index].trick) {
+            expect(t).toBeGreaterThan(along);
+            expect(t).toBeLessThan(along + times.pass);
+            expect(pose.v).toBe(BOX_LINES[line]);
+            expect(pose.z).toBe(GRIND_BOX.height);
+            expect(pose.u).toBeGreaterThanOrEqual(GRIND_BOX.start);
+            expect(pose.u).toBeLessThanOrEqual(GRIND_BOX.end);
+          }
+        }
+        expect([...seen].sort()).toEqual([pair.tricks[index].trick, 'ollie'].sort());
+      }
+    }
+  });
+
+  it('moves smoothly from start to landing, and hands control back on time', () => {
+    pair.tricks.forEach((_, index) => {
+      for (const from of [byQuarter, byBox, pastBox]) {
+        const trick = startTrick(map, pair, index, from);
+        const length = trickLength(trick);
+        expect(length).toBeCloseTo(index === 0 ? quarterLength : boxLength);
+        expect(length).toBeGreaterThan(2);
+        expect(length).toBeLessThan(6);
+        const start = trickPosition(trick, 0);
+        expect(start.x).toBeCloseTo(from.x);
+        expect(start.y).toBeCloseTo(from.y);
+        let last = playerTrickAt(trick, 0);
+        for (let t = 0.01; t <= length; t += 0.01) {
+          const pose = playerTrickAt(trick, t);
+          expect(Math.abs(pose.u - last.u)).toBeLessThan(0.15);
+          expect(Math.abs(pose.v - last.v)).toBeLessThan(0.15);
+          expect(Math.abs(pose.z - last.z)).toBeLessThan(2);
+          last = pose;
+        }
+        let done = false;
+        let steps = 0;
+        while (!done) {
+          done = updateTrick(trick, 1 / 60);
+          steps++;
+        }
+        expect(Math.abs(steps - length * 60)).toBeLessThanOrEqual(1.01);
+        expect(trick.t).toBe(length);
+        const end = trickPosition(trick);
+        expect(end.x).toBeCloseTo(trick.to.x);
+        expect(end.y).toBeCloseTo(trick.to.y);
+        expect(playerTrickAt(trick).z).toBe(0);
+      }
+    });
+  });
+
+  it('rides round on open ground or the course, never through anything else', () => {
+    // In front of the quarter pipe's ramp, as well as its run out.
+    const byRamp = { x: quarter.x + 0.5, y: quarter.y + quarter.h + 0.5 };
+    expect(canStand(map, byRamp.x, byRamp.y)).toBe(true);
+    expect(featureInReach(features, byRamp)).toBe(pair);
+    pair.tricks.forEach((_, index) => {
+      for (const from of [byRamp, byQuarter, byBox, pastBox]) {
+        const trick = startTrick(map, pair, index, from);
+        for (let t = 0; t <= trickLength(trick); t += 0.01) {
+          const at = trickPosition(trick, t);
+          const tx = Math.floor(at.x);
+          const ty = Math.floor(at.y);
+          const onCourse = pair.props.some(
+            (p) => tx >= p.x && tx < p.x + p.w && ty >= p.y && ty < p.y + p.h,
+          );
+          if (!onCourse) expect(isBlocked(map, tx, ty)).toBe(false);
+          // Nor through the box on the grind box: on top of it or above it.
+          const u = at.x - box.x;
+          const v = at.y - box.y;
+          const { start, end, far, near, height } = GRIND_BOX;
+          if (u > start && u < end && v > far - 0.3 && v < near + 0.3) {
+            expect(playerTrickAt(trick, t).z).toBeGreaterThanOrEqual(height);
+          }
+          // Nor through the quarter pipe's ramp: on its surface or above it.
+          const qu = at.x - quarter.x;
+          const qv = at.y - quarter.y;
+          if (qu > 0 && qu < quarter.w && qv > 0 && qv < quarter.h) {
+            expect(playerTrickAt(trick, t).z).toBeGreaterThanOrEqual(quarterPipeHeight(qu) - 0.01);
+          }
+        }
+      }
+    });
   });
 });
 

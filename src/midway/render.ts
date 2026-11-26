@@ -1869,12 +1869,28 @@ const RAIL_TRICKS = new Set<SkateTrick | undefined>(['50-50', 'boardslide', 'lip
 
 /** A skater on the stair set, at `pose` in tiles from its back corner. */
 function railRider(ctx: Ctx, prop: Prop, pose: RailSkaterPose, look: SkaterLook) {
+  const onSlope = RAIL_TRICKS.has(pose.trick) || (!pose.trick && pose.v === STAIR_SET.bankY);
+  const slope = onSlope ? (stairSlopeHeight(pose.u + 0.01) - stairSlopeHeight(pose.u)) / 0.01 : 0;
+  poseRider(ctx, prop, pose, look, slope, Math.min(pose.z, stairSurface(pose.u, pose.v)));
+}
+
+/**
+ * A skater at `pose` in tiles from a prop's back corner, upright, with the
+ * board the way they ride. `slope` is how fast what they ride climbs along x,
+ * in pixels a tile, and `groundZ` how high the ground under them is.
+ */
+function poseRider(
+  ctx: Ctx,
+  prop: Prop,
+  pose: RailSkaterPose,
+  look: SkaterLook,
+  slope: number,
+  groundZ: number,
+) {
   const { x: hx, y: hy } = pose.heading;
   const u = prop.x + pose.u;
   const v = prop.y + pose.v;
-  const onSlope = RAIL_TRICKS.has(pose.trick) || (!pose.trick && pose.v === STAIR_SET.bankY);
-  const slope = onSlope ? (stairSlopeHeight(pose.u + 0.01) - stairSlopeHeight(pose.u)) / 0.01 : 0;
-  const ground = at(u, v, Math.min(pose.z, stairSurface(pose.u, pose.v)));
+  const ground = at(u, v, groundZ);
   oval(ctx, ground[0], ground[1], 5, 2, palette.shadow);
   // The board lies the way they ride, turned by up to a quarter for a slide.
   const turn = (Math.PI / 2) * pose.boardTurn;
@@ -2465,21 +2481,35 @@ const PLAYER_SKATER: SkaterLook = {
   helmet: PLAYER_LOOK.cap ?? palette.gold,
 };
 
-/** The player partway through a trick on a skate feature. */
-export function drawPlayerTrick(ctx: Ctx, trick: PlayerTrick) {
-  const { prop } = trick.feature;
-  const pose = playerTrickAt(trick);
-  if (trick.feature.kind !== 'halfpipe') {
-    railRider(ctx, prop, pose, PLAYER_SKATER);
-    return;
-  }
+/**
+ * The player on the second course's quarter pipe or grind box, at `pose` in
+ * tiles from its back corner. Riding along x, they lean into the ramp like
+ * the skaters there; turning and riding round, they stand upright.
+ */
+function courseRider(ctx: Ctx, prop: Prop, pose: RailSkaterPose, look: SkaterLook) {
+  const quarter = prop.kind === 'quarter-pipe';
+  const height = (u: number) => (quarter ? quarterPipeHeight(u) : 0);
+  const inside = pose.u >= 0 && pose.u <= prop.w && pose.v >= 0 && pose.v <= prop.h;
+  const { start, end, far, near } = GRIND_BOX;
+  const onBox = pose.u >= start && pose.u <= end && pose.v >= far && pose.v <= near;
+  const surface = !inside ? 0 : quarter ? quarterPipeHeight(pose.u) : onBox ? GRIND_BOX.height : 0;
+  if (Math.abs(pose.heading.y) > 0.01) return poseRider(ctx, prop, pose, look, 0, surface);
+  const u = prop.x + pose.u;
+  const v = prop.y + pose.v;
+  const ground = at(u, v, Math.min(pose.z, surface));
+  oval(ctx, ground[0], ground[1], 5, 2, palette.shadow);
+  rideRamp(ctx, at(u, v, pose.z), pose, height, look);
+}
+
+/** The player on the halfpipe by the gate, at `pose` in tiles from its back corner. */
+function halfpipeRider(ctx: Ctx, prop: Prop, pose: RailSkaterPose, look: SkaterLook) {
   const onPipe = pose.u >= 0 && pose.u <= HALFPIPE.length;
   const ground = at(prop.x + pose.u, prop.y + pose.v, onPipe ? halfpipeHeight(pose.u) : 0);
   oval(ctx, ground[0], ground[1], 5, 2, palette.shadow);
   const feet = at(prop.x + pose.u, prop.y + pose.v, pose.z);
   // On the halfpipe they ride along x like its skaters, leaning into the ramp.
   if (onPipe) {
-    rideRamp(ctx, feet, pose, halfpipeHeight, PLAYER_SKATER);
+    rideRamp(ctx, feet, pose, halfpipeHeight, look);
     return;
   }
   // Off it, the board lies the way they ride.
@@ -2489,8 +2519,16 @@ export function drawPlayerTrick(ctx: Ctx, trick: PlayerTrick) {
   const run = Math.hypot(dx, dy);
   ctx.save();
   ctx.translate(feet[0], feet[1]);
-  skater(ctx, pose, [dx / run, dy / run], PLAYER_SKATER);
+  skater(ctx, pose, [dx / run, dy / run], look);
   ctx.restore();
+}
+
+/** The player partway through a trick on a skate feature. */
+export function drawPlayerTrick(ctx: Ctx, trick: PlayerTrick) {
+  const pose = playerTrickAt(trick);
+  if (trick.prop.kind === 'stair-rail') railRider(ctx, trick.prop, pose, PLAYER_SKATER);
+  else if (trick.prop.kind === 'halfpipe') halfpipeRider(ctx, trick.prop, pose, PLAYER_SKATER);
+  else courseRider(ctx, trick.prop, pose, PLAYER_SKATER);
 }
 
 // ── The gate ──────────────────────────────────────────────────────────────
