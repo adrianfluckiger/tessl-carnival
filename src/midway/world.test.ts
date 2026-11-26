@@ -1087,8 +1087,12 @@ describe('skating the quarter pipe and grind box', () => {
   });
 
   it('rides round on open ground or the course, never through anything else', () => {
+    // In front of the quarter pipe's ramp, as well as its run out.
+    const byRamp = { x: quarter.x + 0.5, y: quarter.y + quarter.h + 0.5 };
+    expect(canStand(map, byRamp.x, byRamp.y)).toBe(true);
+    expect(featureInReach(features, byRamp)).toBe(pair);
     pair.tricks.forEach((_, index) => {
-      for (const from of [byQuarter, byBox, pastBox]) {
+      for (const from of [byRamp, byQuarter, byBox, pastBox]) {
         const trick = startTrick(map, pair, index, from);
         for (let t = 0; t <= trickLength(trick); t += 0.01) {
           const at = trickPosition(trick, t);
@@ -1104,6 +1108,12 @@ describe('skating the quarter pipe and grind box', () => {
           const { start, end, far, near, height } = GRIND_BOX;
           if (u > start && u < end && v > far - 0.3 && v < near + 0.3) {
             expect(playerTrickAt(trick, t).z).toBeGreaterThanOrEqual(height);
+          }
+          // Nor through the quarter pipe's ramp: on its surface or above it.
+          const qu = at.x - quarter.x;
+          const qv = at.y - quarter.y;
+          if (qu > 0 && qu < quarter.w && qv > 0 && qv < quarter.h) {
+            expect(playerTrickAt(trick, t).z).toBeGreaterThanOrEqual(quarterPipeHeight(qu) - 0.01);
           }
         }
       }

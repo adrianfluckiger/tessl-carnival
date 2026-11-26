@@ -1271,10 +1271,12 @@ function playerBoxAt(trick: PlayerTrick, t: number): RailSkaterPose {
   const v = BOX_LINES[line];
   const { turn, length } = GRIND_BOX;
   const from = { x: trick.from.x - prop.x, y: trick.from.y - prop.y };
-  // In front of the box, where the ride round never passes through it.
+  // In front of the box, where the ride round never passes through it. From
+  // in front of the quarter pipe, along the ground past its ramp first.
   const lane = BOX_LINES.flat;
   const start = { x: turn, y: v };
-  const path = [from, { x: from.x, y: lane }, { x: turn, y: lane }, start];
+  const side = { x: Math.max(from.x, 0), y: from.y };
+  const path = [from, side, { x: side.x, y: lane }, { x: turn, y: lane }, start];
   let time = Math.max(0, Math.min(t, PLAYER_BOX_LENGTH));
   if (time < times.rideIn) {
     const s = time / times.rideIn;
