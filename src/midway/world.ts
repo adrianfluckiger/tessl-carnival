@@ -265,8 +265,9 @@ export const SKATE_AIR = 0.9;
  * the grind box for a 50-50 grind or a manual along it, and the kickflip and
  * pop shove-it are on the flat beside it. In the skate pool, one skater does a
  * McTwist above each wall and the other a method air. The player can 50-50
- * grind, boardslide or lipslide the street course's handrail, and on the
- * second course indy grab the quarter pipe and 50-50 grind or manual the
+ * grind, boardslide or lipslide the street course's handrail, do a frontside
+ * air, a kickflip or a 540 above a lip of the halfpipe by the gate, and on
+ * the second course indy grab the quarter pipe and 50-50 grind or manual the
  * grind box.
  */
 export type SkateTrick =
@@ -282,7 +283,9 @@ export type SkateTrick =
   | 'kickflip'
   | 'shove-it'
   | 'mctwist'
-  | 'method';
+  | 'method'
+  | 'frontside-air'
+  | '540';
 
 export interface SkaterPose {
   /** Tiles along the halfpipe from its left end. */
@@ -574,9 +577,13 @@ export function railSkaterAt(t: number): RailSkaterPose {
 
 /**
  * The skate features the player can do tricks on: the street course's stair
- * set, and the second course's quarter pipe and grind box as a pair.
+ * set, the halfpipe by the gate, and the second course's quarter pipe and
+ * grind box as a pair.
  */
-export type SkateFeatureKind = 'stair-rail' | 'quarter-box';
+export type SkateFeatureKind = 'stair-rail' | 'halfpipe' | 'quarter-box';
+
+/** The tricks done above a lip of the halfpipe by the gate. */
+export type HalfpipeTrick = 'frontside-air' | 'kickflip' | '540';
 
 export interface SkateMove {
   trick: SkateTrick;
@@ -604,6 +611,14 @@ export const SKATE_FEATURES: Record<SkateFeatureKind, Pick<SkateFeature, 'name' 
       { trick: 'lipslide', name: 'Lipslide', on: 'stair-rail' },
     ],
   },
+  halfpipe: {
+    name: 'Halfpipe',
+    tricks: [
+      { trick: 'frontside-air', name: 'Frontside air', on: 'halfpipe' },
+      { trick: 'kickflip', name: 'Kickflip', on: 'halfpipe' },
+      { trick: '540', name: '540', on: 'halfpipe' },
+    ],
+  },
   'quarter-box': {
     name: 'Quarter pipe and grind box',
     tricks: [
@@ -623,6 +638,11 @@ export function skateFeatures(map: MidwayMap): SkateFeature[] {
   for (const prop of map.props) {
     if (prop.kind === 'stair-rail') {
       features.push({ kind: 'stair-rail', props: [prop], ...SKATE_FEATURES['stair-rail'] });
+    }
+    // Only the halfpipe by the gate is the player's; the one in the back
+    // corner is its skater's.
+    if (prop.kind === 'halfpipe' && prop.variant === 1) {
+      features.push({ kind: 'halfpipe', props: [prop], ...SKATE_FEATURES.halfpipe });
     }
   }
   // The second course's quarter pipe and the grind box beside it.
@@ -666,8 +686,30 @@ export const PLAYER_RAIL_TIMES = {
   rollOut: 0.5,
 } as const;
 
-/** Seconds the player's trick down the handrail takes, from riding up to getting control back. */
+/** Seconds the player's run down the handrail takes, from riding up to getting control back. */
 export const PLAYER_TRICK_LENGTH = Object.values(PLAYER_RAIL_TIMES).reduce((a, b) => a + b, 0);
+
+/**
+ * How long each part of the player's run on the halfpipe takes, in seconds:
+ * riding round on the ground to the foot of its nearer end, climbing onto the
+ * deck, dropping in and riding across to the other lip, the trick above it,
+ * riding back up onto the deck, hopping off and rolling out to where they land.
+ */
+export const PLAYER_HALFPIPE_TIMES = {
+  rideOver: 1,
+  climb: 0.4,
+  dropIn: 1.2,
+  air: SKATE_AIR,
+  rideBack: 1.2,
+  hop: 0.4,
+  rollOut: 0.4,
+} as const;
+
+/** Seconds the player's run on the halfpipe takes, from riding over to getting control back. */
+export const PLAYER_HALFPIPE_LENGTH = Object.values(PLAYER_HALFPIPE_TIMES).reduce(
+  (a, b) => a + b,
+  0,
+);
 
 export interface PlayerTrick {
   feature: SkateFeature;
@@ -685,10 +727,12 @@ export interface PlayerTrick {
 /**
  * Whether a point on a skate feature's prop, in tiles from its back corner,
  * is flat ground the player can roll across: the stair set's run out, the
- * quarter pipe's run out, or the grind box's flat clear of the box.
+ * quarter pipe's run out, or the grind box's flat clear of the box. None of
+ * the halfpipe is.
  */
 function flatOn(prop: Prop, u: number, v: number): boolean {
   if (prop.kind === 'stair-rail') return u >= STAIR_SET.deck + STAIR_SET.stairs;
+  if (prop.kind === 'halfpipe') return false;
   if (prop.kind === 'quarter-pipe') return u >= QUARTER_PIPE.deck + QUARTER_PIPE.ramp;
   const { start, end, far, near } = GRIND_BOX;
   const r = WALKER_RADIUS;
@@ -730,12 +774,17 @@ function clearRollOut(map: MidwayMap, feature: SkateFeature, from: Point, to: Po
 /**
  * Where the player starts rolling out at the end of a trick on a prop, in
  * tiles from its back corner, and the way they roll straight on from there:
- * on from the handrail's end, or out towards the midway from the bottom of
- * the quarter pipe or the far end of the grind box.
+ * on from the handrail's end, out from the foot of the halfpipe's end nearer
+ * `from`, or out towards the midway from the bottom of the quarter pipe or the
+ * far end of the grind box.
  */
-function rollOutStart(prop: Prop, trick: SkateTrick): { at: Point; heading: Point } {
+function rollOutStart(prop: Prop, trick: SkateTrick, from: Point): { at: Point; heading: Point } {
   if (prop.kind === 'stair-rail') {
     return { at: { x: RAIL_LINE.land, y: STAIR_SET.railY }, heading: FORWARD };
+  }
+  if (prop.kind === 'halfpipe') {
+    const foot = halfpipeFoot(prop, from);
+    return { at: { x: foot.u, y: foot.v }, heading: { x: foot.side, y: 0 } };
   }
   const towardsMidway = { x: 0, y: 1 };
   if (prop.kind === 'quarter-pipe') {
@@ -748,17 +797,19 @@ function rollOutStart(prop: Prop, trick: SkateTrick): { at: Point; heading: Poin
 }
 
 /**
- * Where the player lands after a trick on one of a feature's props: rolling
- * straight on from where the trick ends to the first open ground, or else the
- * nearest open tile they can roll to without passing through anything.
+ * Where the player lands after a trick on one of a feature's props, set off
+ * from `from`: rolling straight on from where the trick ends to the first
+ * open ground, or else the nearest open tile they can roll to without passing
+ * through anything.
  */
 export function landingSpot(
   map: MidwayMap,
   feature: SkateFeature,
   prop: Prop,
   trick: SkateTrick,
+  from: Point,
 ): Point {
-  const start = rollOutStart(prop, trick);
+  const start = rollOutStart(prop, trick, from);
   const end = { x: prop.x + start.at.x, y: prop.y + start.at.y };
   for (let d = 0; d <= 4; d += 0.1) {
     const at = { x: end.x + start.heading.x * d, y: end.y + start.heading.y * d };
@@ -794,7 +845,7 @@ export function startTrick(
     prop,
     trick: move.trick,
     from: { x: from.x, y: from.y },
-    to: landingSpot(map, feature, prop, move.trick),
+    to: landingSpot(map, feature, prop, move.trick, from),
     t: 0,
   };
 }
@@ -803,6 +854,7 @@ export function startTrick(
 export function trickLength(trick: PlayerTrick): number {
   if (trick.prop.kind === 'quarter-pipe') return PLAYER_QUARTER_LENGTH;
   if (trick.prop.kind === 'grind-box') return PLAYER_BOX_LENGTH;
+  if (trick.prop.kind === 'halfpipe') return PLAYER_HALFPIPE_LENGTH;
   return PLAYER_TRICK_LENGTH;
 }
 
@@ -873,6 +925,7 @@ function alongPath(path: readonly Point[], s: number): { at: Point; heading: Poi
 export function playerTrickAt(trick: PlayerTrick, t = trick.t): RailSkaterPose {
   if (trick.prop.kind === 'quarter-pipe') return playerQuarterAt(trick, t);
   if (trick.prop.kind === 'grind-box') return playerBoxAt(trick, t);
+  if (trick.prop.kind === 'halfpipe') return playerHalfpipeAt(trick, t);
   const { railY, height } = STAIR_SET;
   const times = PLAYER_RAIL_TIMES;
   const { x: x0, y: y0 } = trick.prop;
@@ -910,6 +963,87 @@ export function playerTrickAt(trick: PlayerTrick, t = trick.t): RailSkaterPose {
   const e = ease(s);
   const heading = headingTo(land, to);
   return railPose(lerpNumber(land.x, to.x, e), lerpNumber(land.y, to.y, e), 0, heading, s);
+}
+
+/**
+ * The foot of the halfpipe's end nearer `from`, on the ground just past it
+ * across the middle, in tiles from the halfpipe's back corner, and which way
+ * along x is out from that end.
+ */
+function halfpipeFoot(prop: Prop, from: Point): { u: number; v: number; side: 1 | -1 } {
+  const { length } = HALFPIPE;
+  const left = from.x - prop.x < length / 2;
+  return { u: left ? -0.4 : length + 0.4, v: prop.h / 2, side: left ? -1 : 1 };
+}
+
+/**
+ * Where the player is `t` seconds into a trick on the halfpipe by the gate,
+ * in tiles from its back corner: round on the ground to the foot of its
+ * nearer end, a hop up onto the deck, a drop in and a ride across to the
+ * other lip, the trick above it, back down and up onto the deck they
+ * dropped in from, a hop off the end and a roll out to where they land.
+ */
+function playerHalfpipeAt(trick: PlayerTrick, t: number): RailSkaterPose {
+  const { length, deck, height, air } = HALFPIPE;
+  const times = PLAYER_HALFPIPE_TIMES;
+  const { x: x0, y: y0 } = trick.prop;
+  const from = { x: trick.from.x - x0, y: trick.from.y - y0 };
+  const foot = halfpipeFoot(trick.prop, trick.from);
+  const footPoint = { x: foot.u, y: foot.v };
+  // Into the pipe is the way back from the end they climb.
+  const dir: 1 | -1 = foot.side === -1 ? 1 : -1;
+  const into = { x: dir, y: 0 };
+  const top = foot.side === -1 ? deck / 2 : length - deck / 2;
+  const lip = foot.side === -1 ? length - deck - 0.05 : deck + 0.05;
+  const ease = (s: number) => (1 - Math.cos(Math.PI * s)) / 2;
+  const pose = (u: number, z: number, heading: Point, progress: number, skate?: SkateTrick) =>
+    railPose(u, foot.v, z, heading, progress, skate);
+  let time = Math.max(0, Math.min(t, PLAYER_HALFPIPE_LENGTH));
+  if (time < times.rideOver) {
+    // Along the side they stood on, then round the end, never across the pipe.
+    const path = [from, { x: foot.u, y: from.y }, footPoint];
+    const s = time / times.rideOver;
+    const { at, heading } = alongPath(path, ease(s));
+    return railPose(at.x, at.y, 0, heading, s);
+  }
+  time -= times.rideOver;
+  if (time < times.climb) {
+    const s = time / times.climb;
+    return pose(lerpNumber(foot.u, top, s), height * s + 8 * 4 * s * (1 - s), into, s);
+  }
+  time -= times.climb;
+  if (time < times.dropIn) {
+    const s = time / times.dropIn;
+    const u = lerpNumber(top, lip, ease(s));
+    return pose(u, halfpipeHeight(u), into, s);
+  }
+  time -= times.dropIn;
+  if (time < times.air) {
+    // Up past the lip and back down into the pipe, turning at the top.
+    const s = time / times.air;
+    const z0 = halfpipeHeight(lip);
+    const z = z0 + (height + air - z0) * 4 * s * (1 - s);
+    const heading = s < 0.5 ? into : { x: -dir, y: 0 };
+    return pose(lip, z, heading, s, trick.trick);
+  }
+  time -= times.air;
+  if (time < times.rideBack) {
+    const s = time / times.rideBack;
+    const u = lerpNumber(lip, top, ease(s));
+    return pose(u, halfpipeHeight(u), { x: -dir, y: 0 }, s);
+  }
+  time -= times.rideBack;
+  const out = { x: foot.side, y: 0 };
+  if (time < times.hop) {
+    const s = time / times.hop;
+    return pose(lerpNumber(top, foot.u, s), height * (1 - s) + 8 * 4 * s * (1 - s), out, s);
+  }
+  time -= times.hop;
+  const to = { x: trick.to.x - x0, y: trick.to.y - y0 };
+  const s = Math.min(1, time / times.rollOut);
+  const e = ease(s);
+  const heading = headingTo(footPoint, to);
+  return railPose(lerpNumber(foot.u, to.x, e), lerpNumber(foot.v, to.y, e), 0, heading, s);
 }
 
 /** Where the player is on the midway `t` seconds into a trick, in tiles. */
@@ -1117,7 +1251,7 @@ function playerQuarterAt(trick: PlayerTrick, t: number): RailSkaterPose {
   const run = times.up + times.air + times.down;
   if (time < run) return alongX(quarterSkaterAt(time, trick.trick), mid);
   time -= run;
-  const start = rollOutStart(prop, trick.trick);
+  const start = rollOutStart(prop, trick.trick, trick.from);
   const out = headingTo(bottom, { x: trick.to.x - prop.x, y: trick.to.y - prop.y });
   if (time < times.turn) return turnPose(bottom, FORWARD, out, time / times.turn);
   time -= times.turn;

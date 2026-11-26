@@ -452,7 +452,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       Object.assign(player, done ? trick.to : trickPosition(trick));
       player.walking = false;
       if (done) {
-        // They land rolling on from the feature, facing the way they rode.
+        // They land rolling on, facing the way they rode.
         player.facing = 'front';
         player.flipped = false;
         trick = undefined;

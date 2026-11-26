@@ -1479,9 +1479,15 @@ function skater(ctx: Ctx, pose: SkaterPose, board: Pt, look = HALFPIPE_SKATER, r
         : 0;
   const tuck = Math.sin(Math.PI * air);
   const christ = trick === 'christ-air' ? Math.min(1, 2.2 * Math.sin(Math.PI * s)) : 0;
-  // An indy grab, a McTwist and a method air crouch, with the back hand down
-  // on the board. A method air kicks the board out behind them.
-  const grabbed = trick === 'indy-grab' || trick === 'mctwist' || trick === 'method';
+  // An indy grab, a frontside air, a McTwist, a 540 and a method air crouch,
+  // with the back hand down on the board. A method air kicks the board out
+  // behind them.
+  const grabbed =
+    trick === 'indy-grab' ||
+    trick === 'frontside-air' ||
+    trick === 'mctwist' ||
+    trick === '540' ||
+    trick === 'method';
   const grab = grabbed ? Math.min(1, 2.2 * Math.sin(Math.PI * s)) : 0;
   const sliding = trick === 'boardslide' || trick === 'lipslide';
   const grinding = trick === '50-50';
@@ -1499,6 +1505,10 @@ function skater(ctx: Ctx, pose: SkaterPose, board: Pt, look = HALFPIPE_SKATER, r
     ctx.rotate(-rodeIn * Math.PI * 2 * s);
     ctx.scale(turn, 1);
     ctx.translate(0, 10);
+  } else if (trick === '540') {
+    // A 540 spins a turn and a half round upright, squeezing them across, so
+    // they land facing back down the wall.
+    ctx.scale(Math.cos(3 * Math.PI * s) * (s < 0.5 ? 1 : -1), 1);
   }
   const hip = -9 + 3 * tuck + 4 * grab + (trick ? 0 : 1);
   const shoulder = hip - 8;
@@ -2491,10 +2501,33 @@ function courseRider(ctx: Ctx, prop: Prop, pose: RailSkaterPose, look: SkaterLoo
   rideRamp(ctx, at(u, v, pose.z), pose, height, look);
 }
 
+/** The player on the halfpipe by the gate, at `pose` in tiles from its back corner. */
+function halfpipeRider(ctx: Ctx, prop: Prop, pose: RailSkaterPose, look: SkaterLook) {
+  const onPipe = pose.u >= 0 && pose.u <= HALFPIPE.length;
+  const ground = at(prop.x + pose.u, prop.y + pose.v, onPipe ? halfpipeHeight(pose.u) : 0);
+  oval(ctx, ground[0], ground[1], 5, 2, palette.shadow);
+  const feet = at(prop.x + pose.u, prop.y + pose.v, pose.z);
+  // On the halfpipe they ride along x like its skaters, leaning into the ramp.
+  if (onPipe) {
+    rideRamp(ctx, feet, pose, halfpipeHeight, look);
+    return;
+  }
+  // Off it, the board lies the way they ride.
+  const { x: hx, y: hy } = pose.heading;
+  const dx = 16 * (hx - hy);
+  const dy = 8 * (hx + hy);
+  const run = Math.hypot(dx, dy);
+  ctx.save();
+  ctx.translate(feet[0], feet[1]);
+  skater(ctx, pose, [dx / run, dy / run], look);
+  ctx.restore();
+}
+
 /** The player partway through a trick on a skate feature. */
 export function drawPlayerTrick(ctx: Ctx, trick: PlayerTrick) {
   const pose = playerTrickAt(trick);
   if (trick.prop.kind === 'stair-rail') railRider(ctx, trick.prop, pose, PLAYER_SKATER);
+  else if (trick.prop.kind === 'halfpipe') halfpipeRider(ctx, trick.prop, pose, PLAYER_SKATER);
   else courseRider(ctx, trick.prop, pose, PLAYER_SKATER);
 }
 

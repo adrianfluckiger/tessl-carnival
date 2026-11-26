@@ -20,6 +20,8 @@ import {
   layoutMidway,
   pathToBooth,
   PLAYER_BOX_TIMES,
+  PLAYER_HALFPIPE_LENGTH,
+  PLAYER_HALFPIPE_TIMES,
   PLAYER_QUARTER_TIMES,
   PLAYER_RAIL_TIMES,
   PLAYER_TRICK_LENGTH,
@@ -809,6 +811,138 @@ describe('skating the handrail', () => {
       if (onFeature) expect(at.x - prop.x).toBeGreaterThanOrEqual(deck + stairs);
       else expect(isBlocked(busy, tx, ty)).toBe(false);
     }
+  });
+});
+
+describe('skating the halfpipe by the gate', () => {
+  const map = layoutMidway([]);
+  const features = skateFeatures(map);
+  const pipe = features.find((f) => f.kind === 'halfpipe')!;
+  const [prop] = pipe.props;
+  const { x, y, w, h } = prop;
+  const { length, deck, height, air } = HALFPIPE;
+  const times = PLAYER_HALFPIPE_TIMES;
+  const flying = times.rideOver + times.climb + times.dropIn;
+  // Standing on the open ground in front of its left half, and past its right end.
+  const front = { x: x + 1, y: y + h + 0.5 };
+  const pastRight = { x: x + w + 0.5, y: y + 2 };
+
+  it('lists only the halfpipe by the gate, with three tricks', () => {
+    const halfpipes = map.props.filter((p) => p.kind === 'halfpipe');
+    expect(halfpipes).toHaveLength(2);
+    expect(features.filter((f) => f.kind === 'halfpipe')).toHaveLength(1);
+    // The one by the gate is the lower one, nearer the gate.
+    expect(prop.y).toBe(Math.max(...halfpipes.map((p) => p.y)));
+    expect(pipe.name).toBe('Halfpipe');
+    expect(pipe.tricks.map((m) => m.trick)).toEqual(['frontside-air', 'kickflip', '540']);
+    expect(pipe.tricks.map((m) => m.name)).toEqual(['Frontside air', 'Kickflip', '540']);
+    expect(features[0].kind).toBe('stair-rail');
+  });
+
+  it('is in reach only when the player stands next to it', () => {
+    expect(canStand(map, front.x, front.y)).toBe(true);
+    expect(featureInReach(features, front)).toBe(pipe);
+    expect(featureInReach(features, pastRight)).toBe(pipe);
+    expect(featureInReach(features, { x: x - SKATE_REACH + 0.1, y: y + 2 })).toBe(pipe);
+    expect(featureInReach(features, { x: x - SKATE_REACH - 0.2, y: y + 2 })).toBeUndefined();
+    expect(featureInReach(features, map.spawn)).toBeUndefined();
+    // The halfpipe in the back corner is not the player's.
+    const corner = map.props.find((p) => p.kind === 'halfpipe' && p.variant === 0)!;
+    expect(featureInReach(features, { x: corner.x + 2, y: corner.y + corner.h + 0.5 })).toBe(
+      undefined,
+    );
+  });
+
+  it('rides over on the ground to the nearer end and climbs onto its deck', () => {
+    for (const [from, left] of [
+      [front, true],
+      [pastRight, false],
+    ] as const) {
+      const trick = startTrick(map, pipe, 0, from);
+      const start = trickPosition(trick, 0);
+      expect(start.x).toBeCloseTo(from.x);
+      expect(start.y).toBeCloseTo(from.y);
+      for (let t = 0; t <= times.rideOver; t += 0.01) {
+        const pose = playerTrickAt(trick, t);
+        expect(pose.z).toBe(0);
+        // Never across the halfpipe itself.
+        const inside = pose.u > 0 && pose.u < w && pose.v > 0 && pose.v < h;
+        expect(inside).toBe(false);
+      }
+      const up = playerTrickAt(trick, times.rideOver + times.climb);
+      expect(up.z).toBeCloseTo(height);
+      if (left) expect(up.u).toBeLessThan(deck);
+      else expect(up.u).toBeGreaterThan(length - deck);
+    }
+  });
+
+  it('does each trick above the far lip, then lands back in the pipe', () => {
+    pipe.tricks.forEach((move, index) => {
+      const trick = startTrick(map, pipe, index, front);
+      expect(trick.trick).toBe(move.trick);
+      const before = playerTrickAt(trick, flying - 0.01);
+      expect(before.trick).toBeUndefined();
+      let top = 0;
+      for (let t = flying + 0.01; t < flying + times.air; t += 0.01) {
+        const pose = playerTrickAt(trick, t);
+        expect(pose.trick).toBe(move.trick);
+        expect(pose.u).toBeGreaterThan(length - deck - 0.1);
+        expect(pose.z).toBeGreaterThan(halfpipeHeight(pose.u) - 0.5);
+        top = Math.max(top, pose.z);
+      }
+      expect(top).toBeGreaterThan(height + air * 0.9);
+      // Up the wall facing out, back down it facing in.
+      expect(playerTrickAt(trick, flying + 0.1).dir).toBe(1);
+      expect(playerTrickAt(trick, flying + times.air - 0.1).dir).toBe(-1);
+      expect(playerTrickAt(trick, flying + times.air + 0.01).trick).toBeUndefined();
+    });
+  });
+
+  it('moves smoothly from start to landing', () => {
+    for (const from of [front, pastRight]) {
+      const trick = startTrick(map, pipe, 2, from);
+      let last = playerTrickAt(trick, 0);
+      for (let t = 0.01; t <= PLAYER_HALFPIPE_LENGTH; t += 0.01) {
+        const pose = playerTrickAt(trick, t);
+        expect(Math.abs(pose.u - last.u)).toBeLessThan(0.15);
+        expect(Math.abs(pose.v - last.v)).toBeLessThan(0.15);
+        expect(Math.abs(pose.z - last.z)).toBeLessThan(2);
+        last = pose;
+      }
+    }
+  });
+
+  it('lands on open ground by the end it climbed and hands control back', () => {
+    for (const from of [front, pastRight]) {
+      const trick = startTrick(map, pipe, 1, from);
+      expect(canStand(map, trick.to.x, trick.to.y)).toBe(true);
+      const left = from === front;
+      if (left) expect(trick.to.x).toBeLessThan(x);
+      else expect(trick.to.x).toBeGreaterThan(x + w);
+      let done = false;
+      let steps = 0;
+      while (!done) {
+        done = updateTrick(trick, 1 / 60);
+        steps++;
+      }
+      expect(Math.abs(steps - PLAYER_HALFPIPE_LENGTH * 60)).toBeLessThanOrEqual(1);
+      expect(trick.t).toBe(PLAYER_HALFPIPE_LENGTH);
+      const end = trickPosition(trick);
+      expect(end.x).toBeCloseTo(trick.to.x);
+      expect(end.y).toBeCloseTo(trick.to.y);
+      expect(playerTrickAt(trick).z).toBe(0);
+    }
+  });
+
+  it('takes the same time for every trick, a little longer than the handrail', () => {
+    expect(PLAYER_HALFPIPE_LENGTH).toBeCloseTo(Object.values(times).reduce((a, b) => a + b, 0));
+    pipe.tricks.forEach((_, index) => {
+      expect(trickLength(startTrick(map, pipe, index, front))).toBe(PLAYER_HALFPIPE_LENGTH);
+    });
+    expect(trickLength(startTrick(map, features[0], 0, front))).toBe(PLAYER_TRICK_LENGTH);
+    expect(times.air).toBe(SKATE_AIR);
+    expect(PLAYER_HALFPIPE_LENGTH).toBeGreaterThan(PLAYER_TRICK_LENGTH);
+    expect(PLAYER_HALFPIPE_LENGTH).toBeLessThan(7);
   });
 });
 
