@@ -6,6 +6,7 @@ import {
   boxSkaterAt,
   CART_KINDS,
   CONCERT_STAGE,
+  crowdReach,
   GRIND_BOX,
   HALFPIPE,
   halfpipeHeight,
@@ -1214,9 +1215,10 @@ const FAN_MOVES: readonly RockMove[] = ['jump', 'headbang', 'fist'];
 /**
  * A stage by the gate with a punk band on it, singer, two guitars and drums,
  * playing under flashing lights, and a crowd in front jumping, banging their
- * heads and punching the air on the beat.
+ * heads and punching the air on the beat. While the player crowd surfs
+ * (`surf`), the fans under them reach both hands up to pass them along.
  */
-function concertStage(ctx: Ctx, prop: Prop, t: number) {
+function concertStage(ctx: Ctx, prop: Prop, t: number, surf?: PlayerTrick) {
   const { depth, height } = CONCERT_STAGE;
   const x0 = prop.x;
   const y0 = prop.y;
@@ -1395,13 +1397,16 @@ function concertStage(ctx: Ctx, prop: Prop, t: number) {
       const pose = rockerAt(t, FAN_MOVES[i % FAN_MOVES.length], (i * 0.07) % 0.15);
       const look = visitorLook(i * 2 + 1);
       if (i % 3 === 0) look.shirt = palette.ink;
-      const reach: [number, number] =
+      const rocking: [number, number] =
         FAN_MOVES[i % FAN_MOVES.length] === 'fist'
           ? i % 2
             ? [pose.hands, 0.1]
             : [0.1, pose.hands]
           : [pose.hands, pose.hands];
-      person(ctx, p[0], p[1], look, { back: true, lift: pose.z, nod: pose.nod, reach });
+      const up = crowdReach(surf, { x: x0 + FANS[i][0], y: y0 + FANS[i][1] });
+      const reach: [number, number] = [lerp(rocking[0], 1, up), lerp(rocking[1], 1, up)];
+      const nod = pose.nod * (1 - up);
+      person(ctx, p[0], p[1], look, { back: true, lift: pose.z, nod, reach });
       if (i % 4 === 1)
         mohawk(
           ctx,
@@ -2523,10 +2528,40 @@ function halfpipeRider(ctx: Ctx, prop: Prop, pose: RailSkaterPose, look: SkaterL
   ctx.restore();
 }
 
-/** The player partway through a trick on a skate feature. */
-export function drawPlayerTrick(ctx: Ctx, trick: PlayerTrick) {
+/**
+ * The player lying flat at `pose`, in tiles from the stage spot's back
+ * corner, head first the way they're passed along, arms and legs flailing on
+ * the beat.
+ */
+function crowdSurfer(ctx: Ctx, prop: Prop, pose: RailSkaterPose, look: Look, t: number) {
+  const c = at(prop.x + pose.u, prop.y + pose.v, pose.z);
+  const { x: hx, y: hy } = pose.heading;
+  const run = Math.hypot(hx - hy, (hx + hy) / 2);
+  // Head to feet along the ground, and side to side across it, on screen.
+  const along: Pt = [(hx - hy) / run, (hx + hy) / 2 / run];
+  const across: Pt = [(-hy - hx) / run, (hx - hy) / 2 / run];
+  const point = (a: number, b: number, lift = 0): Pt => [
+    c[0] + along[0] * a + across[0] * b,
+    c[1] + along[1] * a + across[1] * b - lift,
+  ];
+  const kick = Math.sin((Math.PI * 2 * t) / PUNK_BEAT);
+  for (const side of [-1, 1]) {
+    stroke(ctx, [point(-3, side * 2), point(-10, side * 3.5, 1 + side * kick)], look.pants, 2.6);
+  }
+  stroke(ctx, [point(-3, 0), point(4, 0)], look.shirt, 7);
+  for (const side of [-1, 1]) {
+    stroke(ctx, [point(3, side * 3), point(7, side * 7, 3 - side * kick * 2)], look.skin, 2);
+  }
+  const [hx0, hy0] = point(8, 0, 1);
+  oval(ctx, hx0, hy0, 4, 3.4, look.skin);
+  oval(ctx, hx0, hy0 - 1.6, 4.2, 2.4, look.cap ?? look.hair);
+}
+
+/** The player partway through a trick on a skate feature, or crowd surfing. */
+export function drawPlayerTrick(ctx: Ctx, trick: PlayerTrick, t = 0) {
   const pose = playerTrickAt(trick);
-  if (trick.prop.kind === 'stair-rail') railRider(ctx, trick.prop, pose, PLAYER_SKATER);
+  if (trick.prop.kind === 'stage') crowdSurfer(ctx, trick.prop, pose, PLAYER_LOOK, t);
+  else if (trick.prop.kind === 'stair-rail') railRider(ctx, trick.prop, pose, PLAYER_SKATER);
   else if (trick.prop.kind === 'halfpipe') halfpipeRider(ctx, trick.prop, pose, PLAYER_SKATER);
   else courseRider(ctx, trick.prop, pose, PLAYER_SKATER);
 }
@@ -2638,7 +2673,8 @@ export function drawFloaters(ctx: Ctx, floaters: readonly Floater[]) {
 
 // ── Everything else ───────────────────────────────────────────────────────
 
-export function drawProp(ctx: Ctx, prop: Prop, t: number) {
+/** Draws a prop; `trick` is the player's, when they're doing it on this prop. */
+export function drawProp(ctx: Ctx, prop: Prop, t: number, trick?: PlayerTrick) {
   switch (prop.kind) {
     case 'big-top':
       return bigTop(ctx, prop, t);
@@ -2671,7 +2707,7 @@ export function drawProp(ctx: Ctx, prop: Prop, t: number) {
     case 'skate-pool':
       return skatePool(ctx, prop, t);
     case 'stage':
-      return concertStage(ctx, prop, t);
+      return concertStage(ctx, prop, t, trick);
     case 'billboard':
       return billboard(ctx, prop, t);
   }
