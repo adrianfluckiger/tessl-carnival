@@ -14,6 +14,7 @@ import {
   POOL_RIDE,
   poolHeight,
   poolSkaterAt,
+  playerTrickAt,
   PUNK_BEAT,
   QUARTER_PIPE,
   quarterPipeHeight,
@@ -31,8 +32,10 @@ import {
   type BoxLine,
   type BoothSlot,
   type MidwayMap,
+  type PlayerTrick,
   type Point,
   type Prop,
+  type RailSkaterPose,
   type Rect,
   type RockMove,
   type SkaterPose,
@@ -1480,7 +1483,7 @@ function skater(ctx: Ctx, pose: SkaterPose, board: Pt, look = HALFPIPE_SKATER, r
   // on the board. A method air kicks the board out behind them.
   const grabbed = trick === 'indy-grab' || trick === 'mctwist' || trick === 'method';
   const grab = grabbed ? Math.min(1, 2.2 * Math.sin(Math.PI * s)) : 0;
-  const sliding = trick === 'boardslide';
+  const sliding = trick === 'boardslide' || trick === 'lipslide';
   const grinding = trick === '50-50';
   const dir = pose.dir;
   const method = trick === 'method' ? grab : 0;
@@ -1848,15 +1851,22 @@ function stairRail(ctx: Ctx, prop: Prop, t: number) {
   );
   stroke(ctx, [at(x0 + deck, y0, height), at(x0 + deck, side, height)], palette.concreteShade, 0.8);
 
-  const pose = railSkaterAt(t);
+  railRider(ctx, prop, railSkaterAt(t), RAIL_SKATER);
+}
+
+/** Tricks ridden down the handrail, where the board follows its slope. */
+const RAIL_TRICKS = new Set<SkateTrick | undefined>(['50-50', 'boardslide', 'lipslide']);
+
+/** A skater on the stair set, at `pose` in tiles from its back corner. */
+function railRider(ctx: Ctx, prop: Prop, pose: RailSkaterPose, look: SkaterLook) {
   const { x: hx, y: hy } = pose.heading;
-  const u = x0 + pose.u;
-  const v = y0 + pose.v;
-  const onSlope = pose.trick === 'boardslide' || (!pose.trick && pose.v === STAIR_SET.bankY);
+  const u = prop.x + pose.u;
+  const v = prop.y + pose.v;
+  const onSlope = RAIL_TRICKS.has(pose.trick) || (!pose.trick && pose.v === STAIR_SET.bankY);
   const slope = onSlope ? (stairSlopeHeight(pose.u + 0.01) - stairSlopeHeight(pose.u)) / 0.01 : 0;
   const ground = at(u, v, Math.min(pose.z, stairSurface(pose.u, pose.v)));
   oval(ctx, ground[0], ground[1], 5, 2, palette.shadow);
-  // The board lies the way they ride, turned by up to a quarter for the boardslide.
+  // The board lies the way they ride, turned by up to a quarter for a slide.
   const turn = (Math.PI / 2) * pose.boardTurn;
   const along = hx * Math.cos(turn) - hy * Math.sin(turn);
   const across = hx * Math.sin(turn) + hy * Math.cos(turn);
@@ -1870,7 +1880,7 @@ function stairRail(ctx: Ctx, prop: Prop, t: number) {
   const feet = at(u, v, pose.z);
   ctx.save();
   ctx.translate(feet[0], feet[1]);
-  skater(ctx, pose, [dx / run, dy / run], RAIL_SKATER, [downX / downRun, downY / downRun]);
+  skater(ctx, pose, [dx / run, dy / run], look, [downX / downRun, downY / downRun]);
   ctx.restore();
 }
 
@@ -2435,6 +2445,19 @@ export function drawWalker(ctx: Ctx, walker: Walker, look: Look, player = false,
     player,
     t,
   });
+}
+
+/** The player on their board, in a skater's helmet the colour of their cap. */
+const PLAYER_SKATER: SkaterLook = {
+  skin: PLAYER_LOOK.skin,
+  shirt: PLAYER_LOOK.shirt,
+  pants: PLAYER_LOOK.pants,
+  helmet: PLAYER_LOOK.cap ?? palette.gold,
+};
+
+/** The player partway through a trick on a skate feature. */
+export function drawPlayerTrick(ctx: Ctx, trick: PlayerTrick) {
+  railRider(ctx, trick.feature.prop, playerTrickAt(trick), PLAYER_SKATER);
 }
 
 // ── The gate ──────────────────────────────────────────────────────────────

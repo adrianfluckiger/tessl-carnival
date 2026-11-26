@@ -10,6 +10,7 @@ import {
   drawFrontHedge,
   drawField,
   drawGroundLayer,
+  drawPlayerTrick,
   drawProp,
   drawWalker,
   groundBounds,
@@ -27,19 +28,26 @@ import {
   boothInReach,
   createVisitors,
   createWalker,
+  featureInReach,
   findPath,
   followPath,
   inputDirection,
   layoutMidway,
   pathToBooth,
+  skateFeatures,
+  startTrick,
   strollTiles,
   toScreen,
   toTile,
+  trickPosition,
+  updateTrick,
   updateVisitor,
   walk,
   type BoothSlot,
+  type PlayerTrick,
   type Point,
   type Prop,
+  type SkateFeature,
 } from './world';
 
 export interface MidwayOptions {
@@ -48,6 +56,8 @@ export interface MidwayOptions {
   onPlay(gameId: string): void;
   /** Called whenever the booth in reach changes. */
   onReach(booth: BoothSlot | undefined): void;
+  /** Called whenever the skate feature the player can do tricks on changes. */
+  onSkateReach(feature: SkateFeature | undefined): void;
 }
 
 export interface MidwayControls {
@@ -67,6 +77,8 @@ const MOVE_KEYS: Record<string, [number, number]> = {
   KeyD: [1, 0],
 };
 const PLAY_KEYS = new Set(['KeyE', 'Enter', 'Space']);
+/** Keys 1, 2 and 3 do a skate feature's first, second and third trick. */
+const TRICK_KEYS = ['Digit1', 'Digit2', 'Digit3'];
 const DEVCON_URL =
   'https://tessl.io/devcon?utm_source=carnival&utm_medium=midway-billboard&utm_campaign=tessl-carnival';
 const MIN_QUALITY = 0.5;
@@ -81,6 +93,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   const map = layoutMidway(options.games.map((g) => g.id));
   const names = new Map(options.games.map((g) => [g.id, g.name]));
   const player = createWalker(returnTo ?? map.spawn);
+  const features = skateFeatures(map);
   // Booths and scenery never move, so work out where each one sits once.
   const scenery: { depth: number; box: Box; booth?: BoothSlot; prop?: Prop; name: string }[] = [
     ...map.booths.map((booth) => ({
@@ -108,6 +121,9 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let nextFloater = 2;
   let inReach: BoothSlot | undefined;
+  let skateReach: SkateFeature | undefined;
+  /** The trick the player is doing, while they're doing one. */
+  let trick: PlayerTrick | undefined;
   let destination: Point | undefined;
 
   let dpr = 1;
@@ -150,6 +166,12 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     target instanceof HTMLElement && target.closest('a, button, input, textarea, select') !== null;
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
+    // Nothing moves the player while they're skating.
+    if (trick) {
+      if (event.code in MOVE_KEYS || TRICK_KEYS.includes(event.code)) event.preventDefault();
+      return;
+    }
+    const trickIndex = TRICK_KEYS.indexOf(event.code);
     if (event.code in MOVE_KEYS) {
       keys.add(event.code);
       player.path = [];
@@ -158,6 +180,12 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     } else if (PLAY_KEYS.has(event.code) && !isControl(event.target) && inReach?.gameId) {
       event.preventDefault();
       play(inReach);
+    } else if (trickIndex >= 0 && !isControl(event.target) && skateReach) {
+      event.preventDefault();
+      keys.clear();
+      player.path = [];
+      destination = undefined;
+      trick = startTrick(map, skateReach, trickIndex, player);
     }
   };
   const onKeyUp = (event: KeyboardEvent) => keys.delete(event.code);
@@ -186,6 +214,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     });
 
   const walkToBooth = (booth: BoothSlot) => {
+    if (trick) return;
     player.path = pathToBooth(map, player, booth) ?? [];
     destination = player.path.at(-1);
   };
@@ -197,6 +226,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       window.open(DEVCON_URL, '_blank', 'noopener');
       return;
     }
+    if (trick) return;
     if (booth) {
       if (booth === inReach) play(booth);
       else walkToBooth(booth);
@@ -321,7 +351,9 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
 
     // Anything drawn in front of the player fades, so they never get lost.
     const feet = toScreen(player.x, player.y);
-    const playerDepth = player.x + player.y;
+    // Mid-trick, the player rides on top of the feature, so draw them just after it.
+    const skating = trick && scenery.find((item) => item.prop === trick!.feature.prop);
+    const playerDepth = skating ? skating.depth + 0.01 : player.x + player.y;
     const hidesPlayer = (box: Box, depth: number) =>
       depth > playerDepth &&
       box.left < feet.x + 6 &&
@@ -356,7 +388,8 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       {
         depth: playerDepth,
         box: walkerBox(player),
-        draw: () => drawWalker(ctx, player, PLAYER_LOOK, true, t),
+        draw: () =>
+          trick ? drawPlayerTrick(ctx, trick) : drawWalker(ctx, player, PLAYER_LOOK, true, t),
       },
     ];
     for (const item of scenery) {
@@ -414,16 +447,31 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       down += MOVE_KEYS[code][1];
     }
     const direction = inputDirection(Math.sign(right), Math.sign(down));
-    if (direction.x !== 0 || direction.y !== 0) walk(map, player, direction, dt);
+    if (trick) {
+      const done = updateTrick(trick, dt);
+      Object.assign(player, done ? trick.to : trickPosition(trick));
+      player.walking = false;
+      if (done) {
+        // They land rolling on down the rail's line, facing the way they rode.
+        player.facing = 'front';
+        player.flipped = false;
+        trick = undefined;
+      }
+    } else if (direction.x !== 0 || direction.y !== 0) walk(map, player, direction, dt);
     else if (player.path.length > 0) followPath(player, dt);
     else player.walking = false;
 
     for (const visitor of visitors) updateVisitor(map, visitor, dt, Math.random, strolls);
 
-    const reach = boothInReach(map, player);
+    const reach = trick ? undefined : boothInReach(map, player);
     if (reach !== inReach) {
       inReach = reach;
       options.onReach(reach);
+    }
+    const feature = trick ? undefined : featureInReach(features, player);
+    if (feature !== skateReach) {
+      skateReach = feature;
+      options.onSkateReach(feature);
     }
 
     updateFloaters(dt);

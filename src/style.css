@@ -99,7 +99,8 @@ body[data-view='midway'] main {
 .midway-help,
 .midway-guide,
 .midway-credit,
-.booth-card {
+.booth-card,
+.skate-hint {
   position: absolute;
   margin: 0;
   border: 2px solid var(--color-accent);
@@ -197,6 +198,30 @@ kbd {
 
 .booth-card[hidden] {
   display: none;
+}
+
+.skate-hint {
+  top: 16px;
+  left: 50%;
+  padding: 10px 16px;
+  transform: translateX(-50%);
+}
+
+.skate-hint[hidden] {
+  display: none;
+}
+
+.skate-hint h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.skate-hint ul {
+  display: flex;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .booth-card.closed {
