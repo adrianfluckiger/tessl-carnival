@@ -2473,7 +2473,8 @@ export function drawPlayerTrick(ctx: Ctx, trick: PlayerTrick) {
     railRider(ctx, prop, pose, PLAYER_SKATER);
     return;
   }
-  const onPipe = pose.u >= 0 && pose.u <= HALFPIPE.length;
+  // On it means over its footprint, not riding the ground beside it.
+  const onPipe = pose.u >= 0 && pose.u <= HALFPIPE.length && pose.v >= 0 && pose.v <= prop.h;
   const ground = at(prop.x + pose.u, prop.y + pose.v, onPipe ? halfpipeHeight(pose.u) : 0);
   oval(ctx, ground[0], ground[1], 5, 2, palette.shadow);
   const feet = at(prop.x + pose.u, prop.y + pose.v, pose.z);
