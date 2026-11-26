@@ -268,7 +268,7 @@ export const SKATE_AIR = 0.9;
  * grind, boardslide or lipslide the street course's handrail, do a frontside
  * air, a kickflip or a 540 above a lip of the halfpipe by the gate, and on
  * the second course indy grab the quarter pipe and 50-50 grind or manual the
- * grind box.
+ * grind box. Off the board, the player can crowd surf the punk concert's crowd.
  */
 export type SkateTrick =
   | '360-flip'
@@ -285,7 +285,8 @@ export type SkateTrick =
   | 'mctwist'
   | 'method'
   | 'frontside-air'
-  | '540';
+  | '540'
+  | 'crowd-surf';
 
 export interface SkaterPose {
   /** Tiles along the halfpipe from its left end. */
@@ -576,11 +577,11 @@ export function railSkaterAt(t: number): RailSkaterPose {
 // ── Skating as the player ─────────────────────────────────────────────────
 
 /**
- * The skate features the player can do tricks on: the street course's stair
- * set, the halfpipe by the gate, and the second course's quarter pipe and
- * grind box as a pair.
+ * The features the player can do tricks on: the street course's stair set,
+ * the halfpipe by the gate, the second course's quarter pipe and grind box as
+ * a pair, and the crowd in front of the punk concert's stage to crowd surf.
  */
-export type SkateFeatureKind = 'stair-rail' | 'halfpipe' | 'quarter-box';
+export type SkateFeatureKind = 'stair-rail' | 'halfpipe' | 'quarter-box' | 'crowd';
 
 /** The tricks done above a lip of the halfpipe by the gate. */
 export type HalfpipeTrick = 'frontside-air' | 'kickflip' | '540';
@@ -597,8 +598,10 @@ export interface SkateFeature {
   name: string;
   /** The props it's made of. */
   props: readonly Prop[];
-  /** The three tricks, for keys 1, 2 and 3. */
-  tricks: readonly [SkateMove, SkateMove, SkateMove];
+  /** Where the player must stand next to, to use it; its props unless given. */
+  near?: readonly Rect[];
+  /** Its tricks, for keys 1, 2 and 3 in turn. */
+  tricks: readonly SkateMove[];
 }
 
 /** What each kind of skate feature is called, and the tricks the player can do on it. */
@@ -627,7 +630,17 @@ export const SKATE_FEATURES: Record<SkateFeatureKind, Pick<SkateFeature, 'name' 
       { trick: 'manual', name: 'Manual', on: 'grind-box' },
     ],
   },
+  crowd: {
+    name: 'Punk crowd',
+    tricks: [{ trick: 'crowd-surf', name: 'Crowd surf', on: 'stage' }],
+  },
 };
+
+/** The crowd in front of the concert stage, in tiles on the midway. */
+export function concertCrowd(stage: Prop): Rect {
+  const { depth, crowd } = CONCERT_STAGE;
+  return { x: stage.x, y: stage.y + depth, w: stage.w, h: crowd };
+}
 
 /** How close, in tiles, the player must stand to a skate feature to skate it. */
 export const SKATE_REACH = 1.1;
@@ -643,6 +656,14 @@ export function skateFeatures(map: MidwayMap): SkateFeature[] {
     // corner is its skater's.
     if (prop.kind === 'halfpipe' && prop.variant === 1) {
       features.push({ kind: 'halfpipe', props: [prop], ...SKATE_FEATURES.halfpipe });
+    }
+    if (prop.kind === 'stage') {
+      features.push({
+        kind: 'crowd',
+        props: [prop],
+        near: [concertCrowd(prop)],
+        ...SKATE_FEATURES.crowd,
+      });
     }
   }
   // The second course's quarter pipe and the grind box beside it.
@@ -663,7 +684,8 @@ export function featureInReach(
   let nearest: SkateFeature | undefined;
   let nearestDistance = reach;
   for (const feature of features) {
-    const distance = Math.min(...feature.props.map((prop) => distanceToRect(point, prop)));
+    const areas = feature.near ?? feature.props;
+    const distance = Math.min(...areas.map((area) => distanceToRect(point, area)));
     if (distance <= nearestDistance) {
       nearest = feature;
       nearestDistance = distance;
@@ -711,6 +733,27 @@ export const PLAYER_HALFPIPE_LENGTH = Object.values(PLAYER_HALFPIPE_TIMES).reduc
   0,
 );
 
+/**
+ * How long each part of the player's crowd surf takes, in seconds: climbing
+ * up onto the crowd at its end nearer where they stood, being passed along
+ * across it, and being set down past its far end.
+ */
+export const PLAYER_SURF_TIMES = {
+  climb: 0.6,
+  surf: 3,
+  setDown: 0.6,
+} as const;
+
+/** Seconds the player's crowd surf takes, from climbing up to getting control back. */
+export const PLAYER_SURF_LENGTH = Object.values(PLAYER_SURF_TIMES).reduce((a, b) => a + b, 0);
+
+/**
+ * How the player lies on the crowd: `height` pixels up, on the fans' raised
+ * hands, bobbing up to `bob` pixels more on the beat. The fans within `reach`
+ * tiles of them reach up to hold them.
+ */
+export const CROWD_SURF = { height: 26, bob: 2, reach: 1.2 };
+
 export interface PlayerTrick {
   feature: SkateFeature;
   /** The one of the feature's props the trick is done on. */
@@ -728,11 +771,11 @@ export interface PlayerTrick {
  * Whether a point on a skate feature's prop, in tiles from its back corner,
  * is flat ground the player can roll across: the stair set's run out, the
  * quarter pipe's run out, or the grind box's flat clear of the box. None of
- * the halfpipe is.
+ * the halfpipe or the concert stage is.
  */
 function flatOn(prop: Prop, u: number, v: number): boolean {
   if (prop.kind === 'stair-rail') return u >= STAIR_SET.deck + STAIR_SET.stairs;
-  if (prop.kind === 'halfpipe') return false;
+  if (prop.kind === 'halfpipe' || prop.kind === 'stage') return false;
   if (prop.kind === 'quarter-pipe') return u >= QUARTER_PIPE.deck + QUARTER_PIPE.ramp;
   const { start, end, far, near } = GRIND_BOX;
   const r = WALKER_RADIUS;
@@ -775,10 +818,14 @@ function clearRollOut(map: MidwayMap, feature: SkateFeature, from: Point, to: Po
  * Where the player starts rolling out at the end of a trick on a prop, in
  * tiles from its back corner, and the way they roll straight on from there:
  * on from the handrail's end, out from the foot of the halfpipe's end nearer
- * `from`, or out towards the midway from the bottom of the quarter pipe or the
- * far end of the grind box.
+ * `from`, out towards the midway from the bottom of the quarter pipe or the
+ * far end of the grind box, or on from just past the crowd's far end.
  */
 function rollOutStart(prop: Prop, trick: SkateTrick, from: Point): { at: Point; heading: Point } {
+  if (prop.kind === 'stage') {
+    const line = surfLine(prop, from);
+    return { at: { x: line.off, y: line.v }, heading: { x: line.dir, y: 0 } };
+  }
   if (prop.kind === 'stair-rail') {
     return { at: { x: RAIL_LINE.land, y: STAIR_SET.railY }, heading: FORWARD };
   }
@@ -855,6 +902,7 @@ export function trickLength(trick: PlayerTrick): number {
   if (trick.prop.kind === 'quarter-pipe') return PLAYER_QUARTER_LENGTH;
   if (trick.prop.kind === 'grind-box') return PLAYER_BOX_LENGTH;
   if (trick.prop.kind === 'halfpipe') return PLAYER_HALFPIPE_LENGTH;
+  if (trick.prop.kind === 'stage') return PLAYER_SURF_LENGTH;
   return PLAYER_TRICK_LENGTH;
 }
 
@@ -926,6 +974,7 @@ export function playerTrickAt(trick: PlayerTrick, t = trick.t): RailSkaterPose {
   if (trick.prop.kind === 'quarter-pipe') return playerQuarterAt(trick, t);
   if (trick.prop.kind === 'grind-box') return playerBoxAt(trick, t);
   if (trick.prop.kind === 'halfpipe') return playerHalfpipeAt(trick, t);
+  if (trick.prop.kind === 'stage') return playerSurfAt(trick, t);
   const { railY, height } = STAIR_SET;
   const times = PLAYER_RAIL_TIMES;
   const { x: x0, y: y0 } = trick.prop;
@@ -1044,6 +1093,78 @@ function playerHalfpipeAt(trick: PlayerTrick, t: number): RailSkaterPose {
   const e = ease(s);
   const heading = headingTo(footPoint, to);
   return railPose(lerpNumber(foot.u, to.x, e), lerpNumber(foot.v, to.y, e), 0, heading, s);
+}
+
+/**
+ * The line the player is passed along across the crowd, in tiles from the
+ * stage spot's back corner: along x through the middle of the crowd, from
+ * its end nearer `from` (`start`) to its far end (`end`), heading `dir`
+ * along x, and `off`, just past the far end, where they're set down.
+ */
+function surfLine(
+  prop: Prop,
+  from: Point,
+): { start: number; end: number; off: number; v: number; dir: 1 | -1 } {
+  const { depth, crowd } = CONCERT_STAGE;
+  const v = depth + crowd / 2;
+  const edge = 0.3;
+  const off = WALKER_RADIUS + 0.1;
+  if (from.x - prop.x < prop.w / 2) {
+    return { start: edge, end: prop.w - edge, off: prop.w + off, v, dir: 1 };
+  }
+  return { start: prop.w - edge, end: edge, off: -off, v, dir: -1 };
+}
+
+/** How high the player rides on the crowd `time` seconds into being passed along, in pixels. */
+function surfHeight(time: number): number {
+  return CROWD_SURF.height + CROWD_SURF.bob * Math.abs(Math.sin((Math.PI * time) / PUNK_BEAT));
+}
+
+/**
+ * Where the player is `t` seconds into a crowd surf, in tiles from the stage
+ * spot's back corner: climbing from where they stood up onto the crowd's
+ * nearer end, lying flat on the fans' hands as they're passed along across
+ * it, bobbing on the beat, then set down past its far end where they land.
+ */
+function playerSurfAt(trick: PlayerTrick, t: number): RailSkaterPose {
+  const times = PLAYER_SURF_TIMES;
+  const { x: x0, y: y0 } = trick.prop;
+  const line = surfLine(trick.prop, trick.from);
+  const from = { x: trick.from.x - x0, y: trick.from.y - y0 };
+  const to = { x: trick.to.x - x0, y: trick.to.y - y0 };
+  const along = { x: line.dir, y: 0 };
+  const ease = (s: number) => (1 - Math.cos(Math.PI * s)) / 2;
+  let time = Math.max(0, Math.min(t, PLAYER_SURF_LENGTH));
+  if (time < times.climb) {
+    const s = time / times.climb;
+    const e = ease(s);
+    const u = lerpNumber(from.x, line.start, e);
+    return railPose(u, lerpNumber(from.y, line.v, e), CROWD_SURF.height * e, along, s);
+  }
+  time -= times.climb;
+  if (time < times.surf) {
+    const s = time / times.surf;
+    const u = lerpNumber(line.start, line.end, s);
+    return railPose(u, line.v, surfHeight(time), along, s, 'crowd-surf');
+  }
+  time -= times.surf;
+  const s = Math.min(1, time / times.setDown);
+  const e = ease(s);
+  const z = surfHeight(times.surf) * (1 - e);
+  return railPose(lerpNumber(line.end, to.x, e), lerpNumber(line.v, to.y, e), z, along, s);
+}
+
+/**
+ * How high a fan at `fan`, in tiles on the midway, reaches up to hold the
+ * player crowd surfing `t` seconds in: from 0, not at all, to 1, both hands
+ * straight up, for the fans right under them. Always 0 for any other trick.
+ */
+export function crowdReach(trick: PlayerTrick | undefined, fan: Point, t = trick?.t ?? 0): number {
+  if (trick?.prop.kind !== 'stage') return 0;
+  const pose = playerTrickAt(trick, t);
+  const surfer = { x: trick.prop.x + pose.u, y: trick.prop.y + pose.v };
+  const near = Math.max(0, 1 - Math.hypot(fan.x - surfer.x, fan.y - surfer.y) / CROWD_SURF.reach);
+  return near * Math.min(1, pose.z / CROWD_SURF.height);
 }
 
 /** Where the player is on the midway `t` seconds into a trick, in tiles. */

@@ -77,7 +77,7 @@ const MOVE_KEYS: Record<string, [number, number]> = {
   KeyD: [1, 0],
 };
 const PLAY_KEYS = new Set(['KeyE', 'Enter', 'Space']);
-/** Keys 1, 2 and 3 do a skate feature's first, second and third trick. */
+/** Keys 1, 2 and 3 do a feature's first, second and third trick, when it has that many. */
 const TRICK_KEYS = ['Digit1', 'Digit2', 'Digit3'];
 const DEVCON_URL =
   'https://tessl.io/devcon?utm_source=carnival&utm_medium=midway-billboard&utm_campaign=tessl-carnival';
@@ -166,7 +166,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     target instanceof HTMLElement && target.closest('a, button, input, textarea, select') !== null;
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
-    // Nothing moves the player while they're skating.
+    // Nothing moves the player while they're skating or crowd surfing.
     if (trick) {
       if (event.code in MOVE_KEYS || TRICK_KEYS.includes(event.code)) event.preventDefault();
       return;
@@ -180,7 +180,12 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     } else if (PLAY_KEYS.has(event.code) && !isControl(event.target) && inReach?.gameId) {
       event.preventDefault();
       play(inReach);
-    } else if (trickIndex >= 0 && !isControl(event.target) && skateReach) {
+    } else if (
+      trickIndex >= 0 &&
+      !isControl(event.target) &&
+      skateReach &&
+      trickIndex < skateReach.tricks.length
+    ) {
       event.preventDefault();
       keys.clear();
       player.path = [];
@@ -351,7 +356,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
 
     // Anything drawn in front of the player fades, so they never get lost.
     const feet = toScreen(player.x, player.y);
-    // Mid-trick, the player rides on top of the feature, so draw them just after it.
+    // Mid-trick, the player rides on top of the feature or the crowd, so draw them just after it.
     const skating = trick && scenery.find((item) => item.prop === trick!.prop);
     const playerDepth = skating ? skating.depth + 0.01 : player.x + player.y;
     const hidesPlayer = (box: Box, depth: number) =>
@@ -389,7 +394,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
         depth: playerDepth,
         box: walkerBox(player),
         draw: () =>
-          trick ? drawPlayerTrick(ctx, trick) : drawWalker(ctx, player, PLAYER_LOOK, true, t),
+          trick ? drawPlayerTrick(ctx, trick, t) : drawWalker(ctx, player, PLAYER_LOOK, true, t),
       },
     ];
     for (const item of scenery) {
@@ -397,7 +402,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       const { depth, box, booth, prop, name } = item;
       const paint = booth
         ? () => drawBooth(ctx, booth, name, t, booth === inReach)
-        : () => drawProp(ctx, prop!, t);
+        : () => drawProp(ctx, prop!, t, trick?.prop === prop ? trick : undefined);
       drawables.push({ depth, box, draw: () => faded(box, depth, paint) });
     }
     drawables

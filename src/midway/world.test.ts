@@ -7,7 +7,10 @@ import {
   boothInReach,
   canStand,
   CONCERT_STAGE,
+  concertCrowd,
+  CROWD_SURF,
   createVisitors,
+  crowdReach,
   createWalker,
   featureInReach,
   findPath,
@@ -24,6 +27,8 @@ import {
   PLAYER_HALFPIPE_TIMES,
   PLAYER_QUARTER_TIMES,
   PLAYER_RAIL_TIMES,
+  PLAYER_SURF_LENGTH,
+  PLAYER_SURF_TIMES,
   PLAYER_TRICK_LENGTH,
   playerTrickAt,
   POOL_AIR,
@@ -1313,6 +1318,152 @@ describe('the crowd at the concert stage', () => {
         expect(Math.abs(pose.z - last.z)).toBeLessThan(1);
         last = pose;
       }
+    }
+  });
+});
+
+describe('crowd surfing at the punk concert', () => {
+  const map = layoutMidway([]);
+  const features = skateFeatures(map);
+  const crowd = features.find((f) => f.kind === 'crowd')!;
+  const stage = map.props.find((p) => p.kind === 'stage')!;
+  const area = concertCrowd(stage);
+  const times = PLAYER_SURF_TIMES;
+  const middle = area.y + area.h / 2;
+  // Standing past the crowd's right end, past its left end, and in front of it.
+  const right = { x: area.x + area.w + 0.5, y: middle };
+  const left = { x: area.x - 0.5, y: middle };
+  const front = { x: area.x + 1, y: area.y + area.h + 0.5 };
+
+  const finish = (trick: ReturnType<typeof startTrick>) => {
+    let steps = 0;
+    while (!updateTrick(trick, 1 / 60)) steps++;
+    return steps + 1;
+  };
+
+  it('lists the crowd in front of the stage as a feature with one move, to crowd surf', () => {
+    expect(crowd.props).toEqual([stage]);
+    expect(crowd.tricks.map((m) => m.trick)).toEqual(['crowd-surf']);
+    expect(crowd.tricks.map((m) => m.name)).toEqual(['Crowd surf']);
+    expect(area).toEqual({
+      x: stage.x,
+      y: stage.y + CONCERT_STAGE.depth,
+      w: stage.w,
+      h: CONCERT_STAGE.crowd,
+    });
+    for (const at of [right, left, front]) expect(canStand(map, at.x, at.y)).toBe(true);
+  });
+
+  it('is in reach next to the crowd, but not next to the stage behind it', () => {
+    for (const at of [right, left, front]) expect(featureInReach(features, at)).toBe(crowd);
+    expect(featureInReach(features, { x: area.x + area.w + SKATE_REACH - 0.1, y: middle })).toBe(
+      crowd,
+    );
+    expect(
+      featureInReach(features, { x: area.x + area.w + SKATE_REACH + 0.2, y: middle }),
+    ).toBeUndefined();
+    // Beside the deck and behind it, the band is in the way.
+    expect(featureInReach(features, { x: stage.x + stage.w + 0.5, y: stage.y + 0.5 })).not.toBe(
+      crowd,
+    );
+    expect(featureInReach(features, { x: stage.x + 2, y: stage.y - 0.5 })).not.toBe(crowd);
+    expect(featureInReach(features, map.spawn)).toBeUndefined();
+  });
+
+  it('climbs up onto the nearer end, lies on the crowd across it, and is set down past the far end', () => {
+    for (const [from, dir] of [
+      [right, -1],
+      [left, 1],
+    ] as const) {
+      const trick = startTrick(map, crowd, 0, from);
+      expect(trick.trick).toBe('crowd-surf');
+      expect(trickLength(trick)).toBe(PLAYER_SURF_LENGTH);
+      const start = trickPosition(trick, 0);
+      expect(start.x).toBeCloseTo(from.x);
+      expect(start.y).toBeCloseTo(from.y);
+      expect(playerTrickAt(trick, 0).z).toBe(0);
+      // Passed along through the middle of the crowd, on the fans' hands.
+      const surfing = times.climb;
+      let last = trickPosition(trick, surfing);
+      for (let t = surfing + 0.05; t < surfing + times.surf; t += 0.05) {
+        const pose = playerTrickAt(trick, t);
+        const at = trickPosition(trick, t);
+        expect(pose.trick).toBe('crowd-surf');
+        expect(pose.heading).toEqual({ x: dir, y: 0 });
+        expect(at.y).toBeCloseTo(middle);
+        expect(at.x).toBeGreaterThan(area.x);
+        expect(at.x).toBeLessThan(area.x + area.w);
+        expect(Math.sign(at.x - last.x)).toBe(dir);
+        expect(pose.z).toBeGreaterThanOrEqual(CROWD_SURF.height);
+        expect(pose.z).toBeLessThanOrEqual(CROWD_SURF.height + CROWD_SURF.bob);
+        last = at;
+      }
+      // Set down on open ground past the far end.
+      expect(canStand(map, trick.to.x, trick.to.y)).toBe(true);
+      if (dir === 1) expect(trick.to.x).toBeGreaterThan(area.x + area.w);
+      else expect(trick.to.x).toBeLessThan(area.x);
+      expect(trick.to.y).toBeGreaterThan(area.y);
+      expect(trick.to.y).toBeLessThan(area.y + area.h);
+    }
+  });
+
+  it('crosses from front of the crowd to the end farther away', () => {
+    const trick = startTrick(map, crowd, 0, front);
+    expect(trick.to.x).toBeGreaterThan(area.x + area.w);
+  });
+
+  it('bobs on the beat while being passed along', () => {
+    const trick = startTrick(map, crowd, 0, right);
+    const heights = new Set<number>();
+    for (let t = times.climb; t < times.climb + times.surf; t += PUNK_BEAT / 4) {
+      heights.add(Math.round(playerTrickAt(trick, t).z * 10));
+    }
+    expect(heights.size).toBeGreaterThan(1);
+  });
+
+  it('moves smoothly from start to landing, and hands control back on the ground', () => {
+    const trick = startTrick(map, crowd, 0, right);
+    let last = playerTrickAt(trick, 0);
+    for (let t = 0.01; t <= PLAYER_SURF_LENGTH; t += 0.01) {
+      const pose = playerTrickAt(trick, t);
+      expect(Math.abs(pose.u - last.u)).toBeLessThan(0.15);
+      expect(Math.abs(pose.v - last.v)).toBeLessThan(0.15);
+      expect(Math.abs(pose.z - last.z)).toBeLessThan(2);
+      last = pose;
+    }
+    const steps = finish(trick);
+    expect(Math.abs(steps - PLAYER_SURF_LENGTH * 60)).toBeLessThanOrEqual(1);
+    expect(trick.t).toBe(PLAYER_SURF_LENGTH);
+    const end = trickPosition(trick);
+    expect(end.x).toBeCloseTo(trick.to.x);
+    expect(end.y).toBeCloseTo(trick.to.y);
+    expect(playerTrickAt(trick).z).toBe(0);
+  });
+
+  it('has the fans under the surfer reach up, and nobody else', () => {
+    const trick = startTrick(map, crowd, 0, right);
+    const mid = times.climb + times.surf / 2;
+    const under = trickPosition(trick, mid);
+    expect(crowdReach(trick, under, mid)).toBeCloseTo(1);
+    expect(crowdReach(trick, { x: under.x + CROWD_SURF.reach + 0.1, y: under.y }, mid)).toBe(0);
+    // Before they've climbed up, and once they're set down, nobody holds them.
+    expect(crowdReach(trick, trickPosition(trick, 0), 0)).toBe(0);
+    expect(crowdReach(trick, trick.to, PLAYER_SURF_LENGTH)).toBe(0);
+    // Nor for a skate trick, or no trick at all.
+    const rail = features.find((f) => f.kind === 'stair-rail')!;
+    const skate = startTrick(map, rail, 0, { x: 6, y: 9 });
+    expect(crowdReach(skate, under, 1)).toBe(0);
+    expect(crowdReach(undefined, under)).toBe(0);
+  });
+
+  it('leaves the skate features as they were', () => {
+    expect(features.map((f) => f.kind).sort()).toEqual(
+      ['crowd', 'halfpipe', 'quarter-box', 'stair-rail'].sort(),
+    );
+    for (const feature of features) {
+      if (feature.kind === 'crowd') continue;
+      expect(feature.near).toBeUndefined();
+      expect(feature.tricks).toHaveLength(3);
     }
   });
 });
