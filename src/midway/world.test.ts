@@ -56,6 +56,7 @@ import {
   SKATE_AIR,
   SKATE_RIDE,
   SKATE_POOL,
+  SKATE_BRANDS,
   skaterAt,
   STAIR_SET,
   stairSlopeHeight,
@@ -294,20 +295,18 @@ describe('layoutMidway', () => {
     expect(map.props.some((p) => (p.kind as string) === 'carousel')).toBe(false);
   });
 
-  it('puts the skate pool in front of the AI DevCon billboard', () => {
+  it('puts the skate pool beside the booths on its own, with no billboard by it', () => {
     for (const games of [0, 5, 9]) {
       const map = layoutMidway(Array.from({ length: games }, (_, i) => `game-${i}`));
       const pools = map.props.filter((p) => p.kind === 'skate-pool');
       expect(pools).toHaveLength(1);
       const pool = pools[0];
-      const billboard = map.props.find((p) => p.kind === 'billboard')!;
-      // Right in front of it, and wide enough to span it.
-      expect(pool.y).toBe(billboard.y + billboard.h);
-      expect(pool.x).toBeLessThanOrEqual(billboard.x);
-      expect(pool.x + pool.w).toBeGreaterThanOrEqual(billboard.x + billboard.w);
+      expect(pool).toMatchObject({ x: 18, y: 9 });
       expect(pool.w).toBe(SKATE_POOL.length + 2 * SKATE_POOL.rim);
       expect(pool.h).toBe(SKATE_POOL.width + 2 * SKATE_POOL.rim);
       expect(isBlocked(map, pool.x, pool.y)).toBe(true);
+      const billboard = map.props.find((p) => p.kind === 'billboard')!;
+      expect(billboard.y + billboard.h).toBeLessThan(pool.y - 1);
       for (const other of [...map.props, ...map.booths]) {
         if (other === pool) continue;
         const overlaps =
@@ -347,13 +346,34 @@ describe('layoutMidway', () => {
     }
   });
 
-  it('leaves the back of the grounds open at the head of the avenue', () => {
-    const map = layoutMidway(['water-cannon']);
-    const kinds = map.props.map((prop) => prop.kind);
-    expect(kinds).not.toContain('big-top');
-    expect(kinds).not.toContain('peaked-tent');
-    for (let y = 1; y < 5; y++) {
-      for (let x = map.avenueX - 1; x < 19; x++) expect(isBlocked(map, x, y)).toBe(false);
+  it('lines the back of the grounds with the billboard and a tent for each skate brand', () => {
+    for (const games of [0, 1, 9]) {
+      const map = layoutMidway(Array.from({ length: games }, (_, i) => `game-${i}`));
+      const kinds = map.props.map((prop) => prop.kind);
+      expect(kinds).not.toContain('big-top');
+      expect(kinds).not.toContain('peaked-tent');
+      const billboards = map.props.filter((p) => p.kind === 'billboard');
+      const tents = map.props.filter((p) => p.kind === 'brand-tent');
+      expect(billboards).toHaveLength(1);
+      expect(tents.map((tent) => SKATE_BRANDS[tent.variant])).toEqual([...SKATE_BRANDS]);
+      // The back grass, between the top course and the halfpipe in the corner.
+      const box = map.props.find((p) => p.kind === 'grind-box')!;
+      const halfpipe = map.props.find((p) => p.kind === 'halfpipe' && p.variant === 0)!;
+      for (const prop of [...billboards, ...tents]) {
+        expect(prop.y).toBeGreaterThanOrEqual(1);
+        expect(prop.y + prop.h).toBeLessThanOrEqual(5);
+        // A tile of grass between it and either skate feature, so their
+        // skaters never ride into it.
+        expect(prop.x).toBeGreaterThan(box.x + box.w);
+        expect(prop.x + prop.w).toBeLessThan(halfpipe.x);
+        for (let y = prop.y; y < prop.y + prop.h; y++) {
+          for (let x = prop.x; x < prop.x + prop.w; x++) {
+            expect(map.ground[y * map.width + x], `${prop.kind} at ${x},${y}`).toBe('grass');
+          }
+        }
+      }
+      // The tents stand in front of the billboard, so they don't hide it.
+      for (const tent of tents) expect(tent.y).toBeGreaterThan(billboards[0].y + 1);
     }
   });
 
