@@ -222,13 +222,12 @@ function onPlane(ctx: Ctx, origin: Pt, paint: () => void) {
   ctx.restore();
 }
 
-/** A wooden sign with text, in plane-local coordinates centred on (0, 0). */
-function signBoard(
+/** A sign's board and its edge, in plane-local coordinates centred on (0, 0). */
+function signPlank(
   ctx: Ctx,
-  text: string,
   width: number,
   height: number,
-  colors: { board: string; edge: string; text: string },
+  colors: { board: string; edge: string },
   glow = false,
 ) {
   ctx.fillStyle = colors.edge;
@@ -244,6 +243,18 @@ function signBoard(
     ctx.lineWidth = 2;
     ctx.stroke();
   }
+}
+
+/** A wooden sign with text, in plane-local coordinates centred on (0, 0). */
+function signBoard(
+  ctx: Ctx,
+  text: string,
+  width: number,
+  height: number,
+  colors: { board: string; edge: string; text: string },
+  glow = false,
+) {
+  signPlank(ctx, width, height, colors, glow);
   ctx.font = canvasFont('small', 'bold');
   const fit = Math.min(
     (height * 0.62) / theme.font.small,
@@ -256,6 +267,118 @@ function signBoard(
   ctx.textBaseline = 'middle';
   ctx.fillText(text, 0, 1);
   ctx.restore();
+}
+
+/**
+ * The letters N, O, F and X as chunky polygons on a 6 by 7 grid, after the
+ * NOFX band logo. Each glyph is a list of rings, filled even-odd so the O has
+ * its hole.
+ */
+const NOFX_GLYPHS: readonly (readonly Pt[])[][] = [
+  [
+    [
+      [0, 7],
+      [0, 0],
+      [2, 0],
+      [4, 3.6],
+      [4, 0],
+      [6, 0],
+      [6, 7],
+      [4, 7],
+      [2, 3.4],
+      [2, 7],
+    ],
+  ],
+  [
+    [
+      [1, 0],
+      [5, 0],
+      [6, 1],
+      [6, 6],
+      [5, 7],
+      [1, 7],
+      [0, 6],
+      [0, 1],
+    ],
+    [
+      [2, 2],
+      [4, 2],
+      [4, 5],
+      [2, 5],
+    ],
+  ],
+  [
+    [
+      [0, 0],
+      [6, 0],
+      [6, 2],
+      [2, 2],
+      [2, 3],
+      [5, 3],
+      [5, 5],
+      [2, 5],
+      [2, 7],
+      [0, 7],
+    ],
+  ],
+  [
+    [
+      [0, 0],
+      [2, 0],
+      [3, 2.2],
+      [4, 0],
+      [6, 0],
+      [4.2, 3.5],
+      [6, 7],
+      [4, 7],
+      [3, 4.8],
+      [2, 7],
+      [0, 7],
+      [1.8, 3.5],
+    ],
+  ],
+];
+
+/**
+ * The stage's NOFX sign: blocky letters slanted forward, each knocked a
+ * little up or down, with a hard drop shadow, in plane-local coordinates
+ * centred on (0, 0).
+ */
+function nofxSign(
+  ctx: Ctx,
+  width: number,
+  height: number,
+  colors: { board: string; edge: string; text: string; shadow: string },
+) {
+  signPlank(ctx, width, height, colors);
+  const gap = 1;
+  const cols = NOFX_GLYPHS.length * (6 + gap) - gap;
+  const unit = Math.min((height * 0.68) / 7, (width - 12) / cols);
+  const jolt = [-0.4, 0.3, -0.3, 0.4];
+  const letters = (dx: number, dy: number, color: string) => {
+    ctx.save();
+    ctx.translate(dx, dy);
+    // Slant the tops forward, like the logo.
+    ctx.transform(1, 0, -0.28, 1, 0, 0);
+    ctx.scale(unit, unit);
+    ctx.translate(-cols / 2, -3.5);
+    ctx.fillStyle = color;
+    NOFX_GLYPHS.forEach((rings, i) => {
+      const x = i * (6 + gap);
+      const y = jolt[i];
+      ctx.beginPath();
+      for (const ring of rings) {
+        ring.forEach(([px, py], j) =>
+          j === 0 ? ctx.moveTo(x + px, y + py) : ctx.lineTo(x + px, y + py),
+        );
+        ctx.closePath();
+      }
+      ctx.fill('evenodd');
+    });
+    ctx.restore();
+  };
+  letters(1.2, 1.2, colors.shadow);
+  letters(0, 0, colors.text);
 }
 
 // ── Ground ────────────────────────────────────────────────────────────────
@@ -1250,10 +1373,11 @@ function concertStage(ctx: Ctx, prop: Prop, t: number, surf?: PlayerTrick) {
     palette.ink,
   );
   onPlane(ctx, at(x0 + 2, back, height + 28), () =>
-    signBoard(ctx, 'PUNK ROCK', 64, 14, {
+    nofxSign(ctx, 64, 14, {
       board: palette.ink,
       edge: palette.red,
       text: palette.pink,
+      shadow: palette.red,
     }),
   );
   box(
