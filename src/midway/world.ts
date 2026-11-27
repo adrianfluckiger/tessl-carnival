@@ -52,7 +52,8 @@ export type PropKind =
   | 'grind-box'
   | 'skate-pool'
   | 'stage'
-  | 'billboard';
+  | 'billboard'
+  | 'brand-tent';
 
 export interface Prop extends Rect {
   kind: PropKind;
@@ -77,6 +78,9 @@ export interface MidwayMap {
 }
 
 export const CART_KINDS = ['Popcorn', 'Cotton candy', 'Ice cream', 'Drinks'] as const;
+
+/** The skate brands with a tent on the brand row, in the order of the tents' variants. */
+export const SKATE_BRANDS = ['Vans', 'Etnies', 'New Balance'] as const;
 
 const MAP_WIDTH = 24;
 const AVENUE_X = 11;
@@ -154,7 +158,14 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
     block({ x, y, w, h });
   };
 
-  // Along the back, the ground at the head of the avenue stays open.
+  // Along the back, at the head of the avenue, a skate brand row: a billboard
+  // for AI DevCon against the hedge, with a tent each for Vans, Etnies and New
+  // Balance in front of it. A tile of grass keeps them clear of the grind box
+  // on the left and the halfpipe on the right.
+  add('billboard', 11, 1, 3, 1);
+  for (let brand = 0; brand < SKATE_BRANDS.length; brand++) {
+    add('brand-tent', 11 + brand * 2, 3, 2, 2, brand);
+  }
   // A skateboard halfpipe in the back right corner, running along x.
   add('halfpipe', 19, 1, HALFPIPE.length, 4);
   add('planter', 5, 5);
@@ -178,8 +189,7 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
   }
 
   // Beside the booths: a street skating course on the left.
-  // A billboard for AI DevCon, on the right, with a skate pool in front of it.
-  add('billboard', 19, side - 1, 3, 1);
+  // A skate pool on the right.
   add(
     'skate-pool',
     18,

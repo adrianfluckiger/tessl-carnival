@@ -55,6 +55,16 @@ export const palette = {
   closedShade: '#8a7daa',
   white: '#ffffff',
 
+  // The skate brand row's tents and logos.
+  vansRed: '#d0202e',
+  vansRedShade: '#a3161f',
+  etniesRed: '#e2231a',
+  brandBlack: '#222224',
+  brandBlackShade: '#121213',
+  nbRed: '#cf0a2c',
+  nbGrey: '#9a9ea3',
+  nbGreyShade: '#787c81',
+
   skins: ['#f1c27d', '#c68642', '#8d5524', '#e0ac69', '#ffdbac'],
   hairs: ['#3b2219', '#1b1035', '#a55728', '#e6c35c', '#6b4429'],
   shirts: [colors.water, '#7bd389', '#b48ee0', colors.danger, '#2b8ccc', colors.stripeB],

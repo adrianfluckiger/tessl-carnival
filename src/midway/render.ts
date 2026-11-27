@@ -29,6 +29,8 @@ import {
   skaterAt,
   STAIR_SET,
   stairSlopeHeight,
+  TILE_H,
+  TILE_W,
   toScreen,
   type BoxLine,
   type BoothSlot,
@@ -2310,6 +2312,221 @@ function billboard(ctx: Ctx, prop: Prop, t: number) {
   });
 }
 
+// ── Skate brand row ───────────────────────────────────────────────────────
+
+/**
+ * A brand tent's shape, in pixels: how high its canopy's edge is, how high its
+ * peak, and how deep the valance printed with the logo hangs below the edge.
+ */
+const BRAND_TENT = { edge: 34, peak: 48, valance: 13 };
+
+/** How many plane-local pixels one tile along x is (see onPlane). */
+const PLANE_TILE = Math.hypot(TILE_W / 2, TILE_H / 2);
+
+type Logo = (ctx: Ctx, width: number, height: number) => void;
+
+/** Each brand tent's colours and logo, by its variant, in the order of SKATE_BRANDS. */
+const BRAND_TENTS: {
+  canopy: string;
+  canopyShade: string;
+  valance: string;
+  valanceShade: string;
+  logo: Logo;
+}[] = [
+  {
+    canopy: palette.vansRed,
+    canopyShade: palette.vansRedShade,
+    valance: palette.brandBlack,
+    valanceShade: palette.brandBlackShade,
+    logo: vansLogo,
+  },
+  {
+    canopy: palette.brandBlack,
+    canopyShade: palette.brandBlackShade,
+    valance: palette.white,
+    valanceShade: palette.creamShade,
+    logo: etniesLogo,
+  },
+  {
+    canopy: palette.nbGrey,
+    canopyShade: palette.nbGreyShade,
+    valance: palette.white,
+    valanceShade: palette.creamShade,
+    logo: newBalanceLogo,
+  },
+];
+
+/**
+ * Bold text scaled to fit a box, centred on (x, y), in plane-local pixels.
+ * Returns how wide it came out and how tall its capitals are.
+ */
+function fittedText(
+  ctx: Ctx,
+  text: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  color: string,
+  italic = false,
+) {
+  ctx.font = `${italic ? 'italic ' : ''}${canvasFont('small', 'bold')}`;
+  const measured = ctx.measureText(text).width;
+  const fit = Math.min(height / theme.font.small, width / measured);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(fit, fit);
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 0, 1);
+  ctx.restore();
+  return { width: measured * fit, cap: theme.font.small * fit * 0.72 };
+}
+
+/**
+ * The Vans "Off The Wall" box: VANS in a red box, the V's top stroke running
+ * on over the other letters, with OFF THE WALL along the bottom.
+ */
+function vansLogo(ctx: Ctx, width: number, height: number) {
+  const w = Math.min(width, height * 2.2);
+  ctx.fillStyle = palette.white;
+  ctx.fillRect(-w / 2 - 1, -height / 2 - 1, w + 2, height + 2);
+  ctx.fillStyle = palette.vansRed;
+  ctx.fillRect(-w / 2, -height / 2, w, height);
+  const name = fittedText(ctx, 'VANS', 0, -height * 0.1, w * 0.78, height * 0.78, palette.white);
+  const top = -height * 0.1 - name.cap / 2;
+  ctx.fillStyle = palette.white;
+  ctx.fillRect(-name.width / 2 + name.width * 0.08, top - 1.2, name.width * 0.92, 1);
+  fittedText(ctx, 'OFF THE WALL', 0, height * 0.33, w * 0.86, height * 0.26, palette.white);
+}
+
+/**
+ * The Etnies E mark, a heavy E whose arms end in a slant, beside the brand's
+ * name in lower case.
+ */
+function etniesLogo(ctx: Ctx, width: number, height: number) {
+  const s = height * 0.9;
+  const left = -width / 2 + 2;
+  const top = -s / 2;
+  const stem = s * 0.32;
+  const arm = s * 0.26;
+  const slant = s * 0.18;
+  const mid = (s - arm) / 2;
+  const reach = [s * 0.95, s * 0.75, s * 0.95];
+  ctx.fillStyle = palette.etniesRed;
+  ctx.beginPath();
+  ctx.moveTo(left, top);
+  ctx.lineTo(left + reach[0], top);
+  ctx.lineTo(left + reach[0] - slant, top + arm);
+  ctx.lineTo(left + stem, top + arm);
+  ctx.lineTo(left + stem, top + mid);
+  ctx.lineTo(left + reach[1], top + mid);
+  ctx.lineTo(left + reach[1] - slant, top + mid + arm);
+  ctx.lineTo(left + stem, top + mid + arm);
+  ctx.lineTo(left + stem, top + s - arm);
+  ctx.lineTo(left + reach[2], top + s - arm);
+  ctx.lineTo(left + reach[2] - slant, top + s);
+  ctx.lineTo(left, top + s);
+  ctx.closePath();
+  ctx.fill();
+  const rest = width / 2 - (left + s + 1);
+  fittedText(ctx, 'etnies', left + s + 1 + rest / 2, 0, rest, height * 0.85, palette.brandBlack);
+}
+
+/**
+ * The New Balance NB: red slanted capitals cut by thin lines that run on to
+ * the left of the N, over the brand's name in small letters.
+ */
+function newBalanceLogo(ctx: Ctx, width: number, height: number) {
+  const y = -height * 0.14;
+  const nb = fittedText(ctx, 'NB', 0, y, width * 0.6, height * 0.95, palette.nbRed, true);
+  const left = -nb.width / 2;
+  const lines = 4;
+  for (let i = 0; i < lines; i++) {
+    const ly = y - nb.cap / 2 + (nb.cap * (i + 0.5)) / lines;
+    ctx.fillStyle = palette.white;
+    ctx.fillRect(left - 1, ly + nb.cap / (2 * lines) - 0.35, nb.width + 2, 0.7);
+    // The lines trail further out the lower they are, along the N's slant.
+    ctx.fillStyle = palette.nbRed;
+    const trail = 2 + i * 1.2;
+    ctx.fillRect(left - trail, ly - nb.cap / (2 * lines) + 0.35, trail + 1, nb.cap / lines - 0.7);
+  }
+  fittedText(ctx, 'new balance', 0, height * 0.38, width * 0.7, height * 0.24, palette.nbRed);
+}
+
+/**
+ * A skate brand's pop-up tent on the brand row: a peaked canopy on four legs
+ * over a counter, with the brand's logo printed on the front valance.
+ */
+function brandTent(ctx: Ctx, prop: Prop) {
+  const scheme = BRAND_TENTS[prop.variant % BRAND_TENTS.length];
+  const { edge, peak, valance } = BRAND_TENT;
+  const x0 = prop.x + 0.2;
+  const x1 = prop.x + prop.w - 0.2;
+  const y0 = prop.y + 0.25;
+  const y1 = prop.y + prop.h - 0.25;
+  const xm = (x0 + x1) / 2;
+  const ym = (y0 + y1) / 2;
+  const eave = 0.1;
+  const leg = (x: number, y: number) =>
+    stroke(ctx, [at(x, y, 0), at(x, y, edge)], palette.metalShade, 1.6);
+
+  poly(ctx, rectPoints({ x: x0 + 0.3, y: y0 + 0.3, w: x1 - x0, h: y1 - y0 }), palette.shadow);
+  // The back wall, then the legs and counter in front of it.
+  poly(ctx, [at(x0, y0, 0), at(x1, y0, 0), at(x1, y0, edge), at(x0, y0, edge)], scheme.canopyShade);
+  leg(x0, y0);
+  leg(x1, y0);
+  leg(x0, y1);
+  box(
+    ctx,
+    x0 + 0.15,
+    y1 - 0.55,
+    x1 - x0 - 0.3,
+    0.3,
+    0,
+    9,
+    palette.cream,
+    scheme.canopy,
+    scheme.canopyShade,
+  );
+  leg(x1, y1);
+
+  // The canopy, a low pyramid, then the valance round its front and side.
+  const back = at(x0 - eave, y0 - eave, edge);
+  const right = at(x1 + eave, y0 - eave, edge);
+  const front = at(x1 + eave, y1 + eave, edge);
+  const left = at(x0 - eave, y1 + eave, edge);
+  const top = at(xm, ym, peak);
+  poly(ctx, [left, back, top], scheme.canopyShade);
+  poly(ctx, [back, right, top], scheme.canopyShade);
+  poly(ctx, [left, front, top], scheme.canopy);
+  poly(ctx, [front, right, top], scheme.canopyShade);
+  poly(
+    ctx,
+    [
+      left,
+      front,
+      at(x1 + eave, y1 + eave, edge - valance),
+      at(x0 - eave, y1 + eave, edge - valance),
+    ],
+    scheme.valance,
+  );
+  poly(
+    ctx,
+    [
+      front,
+      right,
+      at(x1 + eave, y0 - eave, edge - valance),
+      at(x1 + eave, y1 + eave, edge - valance),
+    ],
+    scheme.valanceShade,
+  );
+  onPlane(ctx, at(xm, y1 + eave, edge - valance / 2), () =>
+    scheme.logo(ctx, (x1 - x0 + 2 * eave) * PLANE_TILE - 3, valance - 3),
+  );
+}
+
 // ── Booths ────────────────────────────────────────────────────────────────
 
 const BOOTH_SCHEMES = [
@@ -2547,6 +2764,7 @@ const PROP_HEIGHTS: Record<Prop['kind'], number> = {
   'skate-pool': SKATE_POOL.air + 40,
   stage: CONCERT_STAGE.height + 70,
   billboard: BILLBOARD_HEIGHT + 40,
+  'brand-tent': BRAND_TENT.peak + 10,
 };
 
 /** Roughly the screen box a prop is drawn in. */
@@ -2834,6 +3052,8 @@ export function drawProp(ctx: Ctx, prop: Prop, t: number, trick?: PlayerTrick) {
       return concertStage(ctx, prop, t, trick);
     case 'billboard':
       return billboard(ctx, prop, t);
+    case 'brand-tent':
+      return brandTent(ctx, prop);
   }
 }
 
